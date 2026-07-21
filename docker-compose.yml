@@ -5,6 +5,8 @@ services:
       - "8000:8000"
     volumes:
       - ephemeris_data:/app/data
+    environment:
+      - SECRET_KEY=${SECRET_KEY:-change-me-in-production}
     restart: unless-stopped
 
   frontend:

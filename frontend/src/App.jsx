@@ -1,5 +1,8 @@
 import { useState, useEffect } from "react";
 import "./App.css";
+import { useAuth } from "./AuthContext";
+import AuthForm from "./AuthForm";
+import { fetchMoon } from "./api";
 
 const FIELDS = [
   { key: "ra_hours", label: "Right Ascension", unit: "h", icon: "↔" },
@@ -21,19 +24,19 @@ function formatValue(key, raw) {
 }
 
 export default function App() {
+  const { isAuthed, logout } = useAuth();
   const [moon, setMoon] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
   useEffect(() => {
-    let cancelled = false;
+    if (!isAuthed) return;
 
-    fetch("/api/moon")
-      .then((res) => {
-        if (!res.ok)
-          throw new Error(`Server returned ${res.status} ${res.statusText}`);
-        return res.json();
-      })
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+
+    fetchMoon()
       .then((data) => {
         if (!cancelled) {
           setMoon(data);
@@ -50,7 +53,7 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [isAuthed]);
 
   return (
     <div className="app">
@@ -58,53 +61,64 @@ export default function App() {
         <span className="app-logo">✦</span>
         <h1 className="app-title">Venera</h1>
         <p className="app-subtitle">Real-time astronomical data</p>
+        {isAuthed && (
+          <button className="logout-btn" onClick={logout} type="button">
+            Sign out
+          </button>
+        )}
       </header>
 
       <main className="app-main">
-        {loading && (
-          <div className="state-card">
-            <div className="spinner" aria-label="Loading" />
-            <p className="state-text">Acquiring lunar position…</p>
-          </div>
-        )}
-
-        {error && (
-          <div className="state-card error-card">
-            <span className="error-icon">⚠</span>
-            <p className="state-text">Failed to fetch moon data</p>
-            <p className="error-detail">{error}</p>
-          </div>
-        )}
-
-        {moon && !loading && !error && (
-          <div className="moon-card">
-            <div className="moon-card-header">
-              <span className="moon-icon">🌕</span>
-              <div>
-                <h2 className="moon-title">The Moon</h2>
-                <p className="moon-timestamp">
-                  {moon.timestamp
-                    ? new Date(moon.timestamp).toUTCString()
-                    : "Current position"}
-                </p>
+        {!isAuthed ? (
+          <AuthForm />
+        ) : (
+          <>
+            {loading && (
+              <div className="state-card">
+                <div className="spinner" aria-label="Loading" />
+                <p className="state-text">Acquiring lunar position…</p>
               </div>
-            </div>
+            )}
 
-            <div className="data-grid">
-              {FIELDS.map(({ key, label, unit, icon }) => (
-                <div className="data-cell" key={key}>
-                  <span className="data-icon" aria-hidden="true">
-                    {icon}
-                  </span>
-                  <span className="data-label">{label}</span>
-                  <span className="data-value">
-                    {formatValue(key, moon[key])}
-                    <span className="data-unit">{unit}</span>
-                  </span>
+            {error && (
+              <div className="state-card error-card">
+                <span className="error-icon">⚠</span>
+                <p className="state-text">Failed to fetch moon data</p>
+                <p className="error-detail">{error}</p>
+              </div>
+            )}
+
+            {moon && !loading && !error && (
+              <div className="moon-card">
+                <div className="moon-card-header">
+                  <span className="moon-icon">🌕</span>
+                  <div>
+                    <h2 className="moon-title">The Moon</h2>
+                    <p className="moon-timestamp">
+                      {moon.timestamp
+                        ? new Date(moon.timestamp).toUTCString()
+                        : "Current position"}
+                    </p>
+                  </div>
                 </div>
-              ))}
-            </div>
-          </div>
+
+                <div className="data-grid">
+                  {FIELDS.map(({ key, label, unit, icon }) => (
+                    <div className="data-cell" key={key}>
+                      <span className="data-icon" aria-hidden="true">
+                        {icon}
+                      </span>
+                      <span className="data-label">{label}</span>
+                      <span className="data-value">
+                        {formatValue(key, moon[key])}
+                        <span className="data-unit">{unit}</span>
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </>
         )}
       </main>
 
