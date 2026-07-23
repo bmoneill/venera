@@ -60,3 +60,8 @@ export async function registerUser(email, password) {
 export async function fetchMoon() {
     return apiFetch('/api/moon')
 }
+
+export async function searchObject(name) {
+    const params = new URLSearchParams({ name })
+    return apiFetch(`/api/search?${params}`)
+}
