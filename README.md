@@ -1,5 +1,5 @@
 <div align="center">
-    <a>Venera</a>: A web application for planning stargazing and astrophotography sessions using real-time astronomical and weather data.</b></h1>
+    <h3><b>Venera</b></h3>
     <a href="https://github.com/bmoneill/venera/actions/workflows/bandit.yml">
         <img alt="Bandit Status" src="https://github.com/bmoneill/venera/actions/workflows/bandit.yml/badge.svg?branch=main" />
     </a>
@@ -20,7 +20,7 @@
 
 ## Overview
 
-This is a web application for tracking and planning stargazing and
+Venera is a web application for tracking and planning stargazing and
 astrophotography sessions. It uses real-time astronomical and weather data to
 provide users with the best times and locations for observing celestial events.
 
