@@ -9,7 +9,12 @@
 
 .search-form {
     display: flex;
+    flex-wrap: wrap;
     gap: 0.5rem;
+}
+
+.search-form .search-input {
+    min-width: 12rem;
 }
 
 .search-input {
@@ -97,4 +102,10 @@
     margin-top: 0.2rem;
     letter-spacing: 0.08em;
     text-transform: uppercase;
+}
+
+.result-location {
+    font-size: 0.78rem;
+    color: var(--text-muted);
+    margin-top: 0.35rem;
 }

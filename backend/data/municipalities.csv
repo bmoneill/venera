@@ -1,0 +1,135 @@
+name,territory,country,latitude,longitude
+Paris,Ile-de-France,France,48.8566,2.3522
+Paris,Texas,United States,33.6609,-95.5555
+London,England,United Kingdom,51.5074,-0.1278
+London,Ontario,Canada,42.9849,-81.2453
+Cambridge,England,United Kingdom,52.2053,0.1218
+Cambridge,Massachusetts,United States,42.3736,-71.1097
+Portland,Oregon,United States,45.5152,-122.6784
+Portland,Maine,United States,43.6591,-70.2568
+Springfield,Illinois,United States,39.7817,-89.6501
+Springfield,Massachusetts,United States,42.1015,-72.5898
+Springfield,Missouri,United States,37.2090,-93.2923
+New York,New York,United States,40.7128,-74.0060
+Los Angeles,California,United States,34.0522,-118.2437
+Chicago,Illinois,United States,41.8781,-87.6298
+Washington,District of Columbia,United States,38.9072,-77.0369
+Toronto,Ontario,Canada,43.6532,-79.3832
+Ottawa,Ontario,Canada,45.4215,-75.6972
+Vancouver,British Columbia,Canada,49.2827,-123.1207
+Mexico City,Ciudad de Mexico,Mexico,19.4326,-99.1332
+Berlin,Berlin,Germany,52.5200,13.4050
+Madrid,Madrid,Spain,40.4168,-3.7038
+Barcelona,Catalonia,Spain,41.3851,2.1734
+Rome,Lazio,Italy,41.9028,12.4964
+Milan,Lombardy,Italy,45.4642,9.1900
+Lisbon,Lisboa,Portugal,38.7223,-9.1393
+Amsterdam,North Holland,Netherlands,52.3676,4.9041
+Brussels,Brussels-Capital,Belgium,50.8503,4.3517
+Vienna,Vienna,Austria,48.2082,16.3738
+Bern,Bern,Switzerland,46.9480,7.4474
+Zurich,Zurich,Switzerland,47.3769,8.5417
+Dublin,Leinster,Ireland,53.3498,-6.2603
+Stockholm,Stockholm County,Sweden,59.3293,18.0686
+Oslo,Oslo,Norway,59.9139,10.7522
+Copenhagen,Capital Region,Denmark,55.6761,12.5683
+Helsinki,Uusimaa,Finland,60.1699,24.9384
+Reykjavik,Capital Region,Iceland,64.1466,-21.9426
+Warsaw,Masovian,Poland,52.2297,21.0122
+Prague,Prague,Czech Republic,50.0755,14.4378
+Budapest,Budapest,Hungary,47.4979,19.0402
+Athens,Attica,Greece,37.9838,23.7275
+Ankara,Ankara,Turkey,39.9334,32.8597
+Istanbul,Istanbul,Turkey,41.0082,28.9784
+Moscow,Moscow,Russia,55.7558,37.6173
+Kyiv,Kyiv City,Ukraine,50.4501,30.5234
+Bucharest,Bucharest,Romania,44.4268,26.1025
+Sofia,Sofia City,Bulgaria,42.6977,23.3219
+Belgrade,Belgrade,Serbia,44.7866,20.4489
+Zagreb,Zagreb,Croatia,45.8150,15.9819
+Ljubljana,Ljubljana,Slovenia,46.0569,14.5058
+Bratislava,Bratislava,Slovakia,48.1486,17.1077
+Vilnius,Vilnius County,Lithuania,54.6872,25.2797
+Riga,Riga,Latvia,56.9496,24.1052
+Tallinn,Harju County,Estonia,59.4370,24.7536
+Minsk,Minsk,Belarus,53.9006,27.5590
+Beijing,Beijing,China,39.9042,116.4074
+Shanghai,Shanghai,China,31.2304,121.4737
+Tokyo,Tokyo,Japan,35.6762,139.6503
+Osaka,Osaka,Japan,34.6937,135.5023
+Seoul,Seoul,South Korea,37.5665,126.9780
+Pyongyang,Pyongyang,North Korea,39.0392,125.7625
+New Delhi,Delhi,India,28.6139,77.2090
+Mumbai,Maharashtra,India,19.0760,72.8777
+Bangkok,Bangkok,Thailand,13.7563,100.5018
+Hanoi,Hanoi,Vietnam,21.0285,105.8542
+Ho Chi Minh City,Ho Chi Minh,Vietnam,10.8231,106.6297
+Manila,Metro Manila,Philippines,14.5995,120.9842
+Jakarta,Jakarta,Indonesia,-6.2088,106.8456
+Kuala Lumpur,Federal Territory,Malaysia,3.1390,101.6869
+Singapore,Singapore,Singapore,1.3521,103.8198
+Islamabad,Islamabad Capital Territory,Pakistan,33.6844,73.0479
+Dhaka,Dhaka,Bangladesh,23.8103,90.4125
+Kathmandu,Bagmati,Nepal,27.7172,85.3240
+Colombo,Western,Sri Lanka,6.9271,79.8612
+Kabul,Kabul,Afghanistan,34.5553,69.2075
+Tehran,Tehran,Iran,35.6892,51.3890
+Baghdad,Baghdad,Iraq,33.3152,44.3661
+Riyadh,Riyadh,Saudi Arabia,24.7136,46.6753
+Dubai,Dubai,United Arab Emirates,25.2048,55.2708
+Abu Dhabi,Abu Dhabi,United Arab Emirates,24.4539,54.3773
+Doha,Doha,Qatar,25.2854,51.5310
+Jerusalem,Jerusalem,Israel,31.7683,35.2137
+Tel Aviv,Tel Aviv,Israel,32.0853,34.7818
+Amman,Amman,Jordan,31.9454,35.9284
+Beirut,Beirut,Lebanon,33.8938,35.5018
+Damascus,Damascus,Syria,33.5138,36.2765
+Cairo,Cairo,Egypt,30.0444,31.2357
+Cape Town,Western Cape,South Africa,-33.9249,18.4241
+Johannesburg,Gauteng,South Africa,-26.2041,28.0473
+Pretoria,Gauteng,South Africa,-25.7479,28.2293
+Nairobi,Nairobi,Kenya,-1.2921,36.8219
+Lagos,Lagos,Nigeria,6.5244,3.3792
+Abuja,Federal Capital Territory,Nigeria,9.0765,7.3986
+Accra,Greater Accra,Ghana,5.6037,-0.1870
+Addis Ababa,Addis Ababa,Ethiopia,9.0300,38.7400
+Casablanca,Casablanca-Settat,Morocco,33.5731,-7.5898
+Rabat,Rabat-Sale-Kenitra,Morocco,34.0209,-6.8417
+Algiers,Algiers,Algeria,36.7538,3.0588
+Tunis,Tunis,Tunisia,36.8065,10.1815
+Kinshasa,Kinshasa,Democratic Republic of the Congo,-4.4419,15.2663
+Dakar,Dakar,Senegal,14.7167,-17.4677
+Buenos Aires,Buenos Aires,Argentina,-34.6037,-58.3816
+Sao Paulo,Sao Paulo,Brazil,-23.5505,-46.6333
+Rio de Janeiro,Rio de Janeiro,Brazil,-22.9068,-43.1729
+Brasilia,Federal District,Brazil,-15.7939,-47.8828
+Santiago,Santiago Metropolitan,Chile,-33.4489,-70.6693
+Lima,Lima,Peru,-12.0464,-77.0428
+Bogota,Bogota,Colombia,4.7110,-74.0721
+Caracas,Capital District,Venezuela,10.4806,-66.9036
+Quito,Pichincha,Ecuador,-0.1807,-78.4678
+Montevideo,Montevideo,Uruguay,-34.9011,-56.1645
+Asuncion,Asuncion,Paraguay,-25.2637,-57.5759
+La Paz,La Paz,Bolivia,-16.5000,-68.1500
+Havana,Havana,Cuba,23.1136,-82.3666
+Kingston,Surrey,Jamaica,17.9712,-76.7936
+Panama City,Panama,Panama,8.9824,-79.5199
+San Jose,San Jose,Costa Rica,9.9281,-84.0907
+San Salvador,San Salvador,El Salvador,13.6929,-89.2182
+Guatemala City,Guatemala,Guatemala,14.6349,-90.5069
+Tegucigalpa,Francisco Morazan,Honduras,14.0723,-87.1921
+Managua,Managua,Nicaragua,12.1364,-86.2514
+Canberra,Australian Capital Territory,Australia,-35.2809,149.1300
+Sydney,New South Wales,Australia,-33.8688,151.2093
+Melbourne,Victoria,Australia,-37.8136,144.9631
+Brisbane,Queensland,Australia,-27.4698,153.0251
+Perth,Western Australia,Australia,-31.9505,115.8605
+Auckland,Auckland,New Zealand,-36.8485,174.7633
+Wellington,Wellington,New Zealand,-41.2865,174.7762
+Suva,Central,Fiji,-18.1416,178.4419
+Ulaanbaatar,Ulaanbaatar,Mongolia,47.8864,106.9057
+Astana,Akmola,Kazakhstan,51.1694,71.4491
+Tashkent,Tashkent,Uzbekistan,41.2995,69.2401
+Baku,Baku,Azerbaijan,40.4093,49.8671
+Yerevan,Yerevan,Armenia,40.1792,44.4991
+Tbilisi,Tbilisi,Georgia,41.7151,44.8271

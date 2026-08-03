@@ -61,7 +61,7 @@ export async function fetchMoon() {
     return apiFetch('/api/moon')
 }
 
-export async function searchObject(name) {
-    const params = new URLSearchParams({ name })
+export async function searchObject(name, coordinates) {
+    const params = new URLSearchParams({ name, coordinates })
     return apiFetch(`/api/search?${params}`)
 }

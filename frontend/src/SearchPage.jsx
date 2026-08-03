@@ -3,11 +3,14 @@ import { searchObject } from './api'
 import './SearchPage.css'
 
 /**
- * SearchPage lets authenticated users look up a celestial object by name
- * and displays its equatorial coordinates (RA and Dec).
+ * SearchPage lets authenticated users look up a celestial object by name,
+ * from a given observer location (a municipality name or raw lat/long
+ * coordinates), and displays its position: right ascension, declination,
+ * altitude, azimuth, and distance.
  */
 export default function SearchPage() {
     const [query, setQuery] = useState('')
+    const [coordinates, setCoordinates] = useState('')
     const [result, setResult] = useState(null)
     const [loading, setLoading] = useState(false)
     const [error, setError] = useState(null)
@@ -15,16 +18,17 @@ export default function SearchPage() {
 
     async function handleSearch(e) {
         e.preventDefault()
-        const trimmed = query.trim()
-        if (!trimmed) return
+        const trimmedName = query.trim()
+        const trimmedCoordinates = coordinates.trim()
+        if (!trimmedName || !trimmedCoordinates) return
 
         setLoading(true)
         setError(null)
         setResult(null)
-        setLastQuery(trimmed)
+        setLastQuery(trimmedName)
 
         try {
-            const data = await searchObject(trimmed)
+            const data = await searchObject(trimmedName, trimmedCoordinates)
             setResult(data)
         } catch (err) {
             setError(err.message)
@@ -45,10 +49,19 @@ export default function SearchPage() {
                     aria-label="Celestial object name"
                     autoFocus
                 />
+                <input
+                    className="search-input"
+                    type="text"
+                    placeholder="Coordinates — e.g. Paris, France or 48.8566, 2.3522"
+                    value={coordinates}
+                    onChange={(e) => setCoordinates(e.target.value)}
+                    aria-label="Observer coordinates (municipality or lat, long)"
+                    required
+                />
                 <button
                     className="search-btn"
                     type="submit"
-                    disabled={loading || !query.trim()}
+                    disabled={loading || !query.trim() || !coordinates.trim()}
                 >
                     {loading ? '…' : 'Search'}
                 </button>
@@ -82,6 +95,9 @@ export default function SearchPage() {
                         <div>
                             <h2 className="result-name">{result.name}</h2>
                             <p className="result-type">{result.type}</p>
+                            <p className="result-location">
+                                Observed from {result.location}
+                            </p>
                         </div>
                     </div>
                     <div className="data-grid">
@@ -103,6 +119,38 @@ export default function SearchPage() {
                             <span className="data-value">
                                 {result.dec_degrees.toFixed(4)}
                                 <span className="data-unit">°</span>
+                            </span>
+                        </div>
+                        <div className="data-cell">
+                            <span className="data-icon" aria-hidden="true">
+                                ▲
+                            </span>
+                            <span className="data-label">Altitude</span>
+                            <span className="data-value">
+                                {result.altitude_degrees.toFixed(2)}
+                                <span className="data-unit">°</span>
+                            </span>
+                        </div>
+                        <div className="data-cell">
+                            <span className="data-icon" aria-hidden="true">
+                                ◎
+                            </span>
+                            <span className="data-label">Azimuth</span>
+                            <span className="data-value">
+                                {result.azimuth_degrees.toFixed(2)}
+                                <span className="data-unit">°</span>
+                            </span>
+                        </div>
+                        <div className="data-cell">
+                            <span className="data-icon" aria-hidden="true">
+                                ⊙
+                            </span>
+                            <span className="data-label">Distance</span>
+                            <span className="data-value">
+                                {result.distance_km.toLocaleString(undefined, {
+                                    maximumFractionDigits: 0,
+                                })}
+                                <span className="data-unit">km</span>
                             </span>
                         </div>
                     </div>
