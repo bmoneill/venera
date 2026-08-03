@@ -11,7 +11,9 @@ from .auth import get_current_user
 from .auth import router as auth_router
 from .database import Base, engine
 from .models import User
+from .municipalities import router as municipalities_router
 from .search import router as search_router
+from .viewrec import router as viewrec_router
 
 Base.metadata.create_all(bind=engine)
 
@@ -22,6 +24,8 @@ app.add_middleware(
 
 app.include_router(auth_router)
 app.include_router(search_router)
+app.include_router(viewrec_router)
+app.include_router(municipalities_router)
 
 
 @app.get("/api/health")

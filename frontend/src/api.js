@@ -65,3 +65,13 @@ export async function searchObject(name, coordinates) {
     const params = new URLSearchParams({ name, coordinates })
     return apiFetch(`/api/search?${params}`)
 }
+
+export async function suggestMunicipalities(query, limit = 8) {
+    const params = new URLSearchParams({ query, limit })
+    return apiFetch(`/api/municipalities?${params}`)
+}
+
+export async function fetchViewingRecommendation(name, coordinates) {
+    const params = new URLSearchParams({ name, coordinates })
+    return apiFetch(`/api/viewrec?${params}`)
+}

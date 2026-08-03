@@ -365,6 +365,30 @@ class MunicipalityGazetteer:
             candidates = [m for m in candidates if m.country.lower() == wanted]
         return candidates
 
+    def suggest(self, prefix: str, limit: int = 10) -> list[Municipality]:
+        """Return municipalities whose name starts with ``prefix``.
+
+        Intended for text-completion in a search-as-you-type UI (e.g. a
+        municipality dropdown). Matching is case-insensitive and based on
+        the municipality's ``name`` only (not its territory or country).
+
+        Args:
+            prefix: The partial municipality name typed by the user. A
+                blank/whitespace-only prefix yields no suggestions.
+            limit: Maximum number of suggestions to return.
+
+        Returns:
+            Matching municipalities, sorted by name, then territory, then
+            country, truncated to ``limit`` entries. Empty if ``prefix``
+            is blank or nothing matches.
+        """
+        text = prefix.strip().lower()
+        if not text:
+            return []
+        matches = [m for m in self._all if m.name.lower().startswith(text)]
+        matches.sort(key=lambda m: (m.name, m.territory, m.country))
+        return matches[:limit]
+
     def __len__(self) -> int:
         return len(self._all)
 

@@ -4,6 +4,7 @@ import { useAuth } from './AuthContext'
 import AuthForm from './AuthForm'
 import MoonPage from './MoonPage'
 import SearchPage from './SearchPage'
+import ViewRecPage from './ViewRecPage'
 
 export default function App() {
     const { isAuthed, logout } = useAuth()
@@ -34,6 +35,14 @@ export default function App() {
                         >
                             🔭 Search
                         </NavLink>
+                        <NavLink
+                            to="/viewrec"
+                            className={({ isActive }) =>
+                                'nav-link' + (isActive ? ' active' : '')
+                            }
+                        >
+                            🕐 When to View
+                        </NavLink>
                     </nav>
                 )}
 
@@ -55,6 +64,7 @@ export default function App() {
                     <Routes>
                         <Route path="/" element={<MoonPage />} />
                         <Route path="/search" element={<SearchPage />} />
+                        <Route path="/viewrec" element={<ViewRecPage />} />
                     </Routes>
                 )}
             </main>

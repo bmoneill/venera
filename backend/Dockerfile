@@ -10,7 +10,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 RUN mkdir -p /app/data
 
 # Copy the backend package
-COPY __init__.py astronomy.py auth.py database.py main.py models.py search.py ./backend/
+COPY __init__.py astronomy.py auth.py database.py geodata.py location.py main.py \
+     models.py municipalities.py search.py viewrec.py visibility.py ./backend/
+COPY data ./backend/data
 
 EXPOSE 8000
 

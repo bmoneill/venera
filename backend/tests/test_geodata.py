@@ -169,6 +169,44 @@ class TestMunicipalityGazetteer:
         assert len(gazetteer) == 3
 
 
+class TestMunicipalityGazetteerSuggest:
+    """Tests for :meth:`geodata.MunicipalityGazetteer.suggest`."""
+
+    def test_prefix_match_returns_all_matches(self, sample_csv_path):
+        gazetteer = geodata.MunicipalityGazetteer.from_csv(sample_csv_path)
+        matches = gazetteer.suggest("Par")
+        assert {m.name for m in matches} == {"Paris"}
+        assert len(matches) == 2
+
+    def test_suggest_is_case_insensitive(self, sample_csv_path):
+        gazetteer = geodata.MunicipalityGazetteer.from_csv(sample_csv_path)
+        assert len(gazetteer.suggest("lon")) == 1
+
+    def test_suggest_results_are_sorted(self, sample_csv_path):
+        gazetteer = geodata.MunicipalityGazetteer.from_csv(sample_csv_path)
+        matches = gazetteer.suggest("Par")
+        territories = [m.territory for m in matches]
+        assert territories == sorted(territories)
+
+    def test_suggest_respects_limit(self, sample_csv_path):
+        gazetteer = geodata.MunicipalityGazetteer.from_csv(sample_csv_path)
+        matches = gazetteer.suggest("Par", limit=1)
+        assert len(matches) == 1
+
+    def test_blank_prefix_returns_empty(self, sample_csv_path):
+        gazetteer = geodata.MunicipalityGazetteer.from_csv(sample_csv_path)
+        assert gazetteer.suggest("") == []
+        assert gazetteer.suggest("   ") == []
+
+    def test_no_match_returns_empty(self, sample_csv_path):
+        gazetteer = geodata.MunicipalityGazetteer.from_csv(sample_csv_path)
+        assert gazetteer.suggest("Zzz") == []
+
+    def test_does_not_match_mid_string(self, sample_csv_path):
+        gazetteer = geodata.MunicipalityGazetteer.from_csv(sample_csv_path)
+        assert gazetteer.suggest("aris") == []
+
+
 # ---------------------------------------------------------------------------
 # Coordinate parsing
 # ---------------------------------------------------------------------------
