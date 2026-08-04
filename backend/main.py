@@ -14,6 +14,7 @@ from .models import User
 from .municipalities import router as municipalities_router
 from .search import router as search_router
 from .viewrec import router as viewrec_router
+from .weather import router as weather_router
 
 Base.metadata.create_all(bind=engine)
 
@@ -26,6 +27,7 @@ app.include_router(auth_router)
 app.include_router(search_router)
 app.include_router(viewrec_router)
 app.include_router(municipalities_router)
+app.include_router(weather_router)
 
 
 @app.get("/api/health")

@@ -8,8 +8,9 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 
-from . import visibility
+from . import openmeteo, visibility
 from .auth import get_current_user
+from .geodata import ResolvedLocation
 from .location import resolve_location
 from .models import User
 from .search import NAMED_STARS, SOLAR_SYSTEM_BODIES
@@ -30,6 +31,8 @@ class ViewingRecommendation(BaseModel):
     altitude_degrees: Optional[float] = None
     azimuth_degrees: Optional[float] = None
     sun_altitude_degrees: Optional[float] = None
+    cloud_cover_pct: Optional[float] = None
+    weather_description: Optional[str] = None
     search_window_days: float
     message: str
 
@@ -60,6 +63,35 @@ def _identify_object(name: str) -> tuple[str, str]:
         status_code=status.HTTP_404_NOT_FOUND,
         detail=f"Celestial object '{name}' not found.",
     )
+
+
+def _fetch_weather_forecast(
+    location: ResolvedLocation, search_window_days: float
+) -> Optional[openmeteo.HourlyForecast]:
+    """Best-effort fetch of an hourly cloud-cover forecast for a location.
+
+    The "When to View" algorithm is still fully functional without
+    weather data (it simply won't factor in cloud cover), so failures
+    talking to the Open-Meteo API are swallowed here rather than
+    propagated as an HTTP error.
+
+    Args:
+        location: The observer's resolved location.
+        search_window_days: How many days of forecast to request, capped
+            at Open-Meteo's supported horizon.
+
+    Returns:
+        The :class:`~backend.openmeteo.HourlyForecast`, or ``None`` if it
+        could not be retrieved.
+    """
+    try:
+        return openmeteo.fetch_hourly_forecast(
+            location.latitude,
+            location.longitude,
+            days=int(search_window_days) + 1,
+        )
+    except openmeteo.WeatherServiceError:
+        return None
 
 
 # ---------------------------------------------------------------------------
@@ -101,7 +133,12 @@ def recommend_viewing_time(
     location = resolve_location(coordinates)
     display_name, type_label = _identify_object(name)
 
-    moment = visibility.find_next_viewing_window(name, location)
+    weather_forecast = _fetch_weather_forecast(
+        location, visibility.DEFAULT_SEARCH_WINDOW_DAYS
+    )
+    moment = visibility.find_next_viewing_window(
+        name, location, weather_forecast=weather_forecast
+    )
 
     if moment is None:
         return ViewingRecommendation(
@@ -118,6 +155,9 @@ def recommend_viewing_time(
         )
 
     formatted_time = moment.time.strftime("%Y-%m-%d %H:%M UTC")
+    message = f"Best viewed from {location.label} at {formatted_time}."
+    if moment.weather_description is not None:
+        message += f" Expected sky: {moment.weather_description.lower()}."
     return ViewingRecommendation(
         name=display_name,
         type=type_label,
@@ -127,6 +167,8 @@ def recommend_viewing_time(
         altitude_degrees=moment.altitude_degrees,
         azimuth_degrees=moment.azimuth_degrees,
         sun_altitude_degrees=moment.sun_altitude_degrees,
+        cloud_cover_pct=moment.cloud_cover_pct,
+        weather_description=moment.weather_description,
         search_window_days=visibility.DEFAULT_SEARCH_WINDOW_DAYS,
-        message=f"Best viewed from {location.label} at {formatted_time}.",
+        message=message,
     )

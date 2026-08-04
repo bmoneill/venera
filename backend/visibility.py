@@ -21,8 +21,9 @@ from typing import Optional
 import numpy as np
 from skyfield.api import Star, wgs84
 
-from . import astronomy
+from . import astronomy, openmeteo
 from .geodata import ResolvedLocation
+from .openmeteo import HourlyForecast
 from .search import NAMED_STARS, SOLAR_SYSTEM_BODIES
 
 # ---------------------------------------------------------------------------
@@ -40,6 +41,12 @@ MAX_SUN_ALTITUDE_FOR_DARKNESS_DEGREES: float = -12.0
 
 #: Minimum Sun altitude (degrees) for the Sun *itself* to be in clear view.
 MIN_SUN_ALTITUDE_DEGREES: float = 10.0
+
+#: Maximum total cloud cover (percentage) for the sky to be considered
+#: clear enough for naked-eye viewing. Only applied when an
+#: :class:`~backend.openmeteo.HourlyForecast` is supplied to
+#: :func:`find_next_viewing_window`.
+MAX_CLOUD_COVER_FOR_CLEAR_SKY_PERCENT: float = 50.0
 
 #: How far into the future to search, and at what resolution, by default.
 DEFAULT_SEARCH_WINDOW_DAYS: float = 14.0
@@ -69,6 +76,8 @@ class ViewingMoment:
     altitude_degrees: float
     azimuth_degrees: float
     sun_altitude_degrees: float
+    cloud_cover_pct: Optional[float] = None
+    weather_description: Optional[str] = None
 
 
 def _resolve_target(key: str) -> tuple[object, str]:
@@ -94,11 +103,32 @@ def _resolve_target(key: str) -> tuple[object, str]:
     raise UnknownObjectError(f"Celestial object '{key}' not found.")
 
 
+def _cloud_cover_acceptable(forecast: HourlyForecast, when: datetime) -> bool:
+    """Check whether the forecast cloud cover at ``when`` permits a clear view.
+
+    Sample times outside the forecast's coverage are treated as
+    acceptable, since there is no data to judge them by.
+
+    Args:
+        forecast: The hourly cloud-cover forecast to consult.
+        when: The UTC moment to check.
+
+    Returns:
+        ``True`` if the cloud cover is unknown or at/below
+        :data:`MAX_CLOUD_COVER_FOR_CLEAR_SKY_PERCENT`.
+    """
+    cloud_cover_pct = forecast.cloud_cover_at(when)
+    if cloud_cover_pct is None:
+        return True
+    return cloud_cover_pct <= MAX_CLOUD_COVER_FOR_CLEAR_SKY_PERCENT
+
+
 def find_next_viewing_window(
     name: str,
     location: ResolvedLocation,
     search_window_days: float = DEFAULT_SEARCH_WINDOW_DAYS,
     step_minutes: float = DEFAULT_STEP_MINUTES,
+    weather_forecast: Optional[HourlyForecast] = None,
 ) -> Optional[ViewingMoment]:
     """Find the soonest time an object will be in clear view for an observer.
 
@@ -110,11 +140,20 @@ def find_next_viewing_window(
     above :data:`MIN_SUN_ALTITUDE_DEGREES`, since it can only be observed
     during daylight.
 
+    When ``weather_forecast`` is supplied, moments where the forecast
+    cloud cover exceeds :data:`MAX_CLOUD_COVER_FOR_CLEAR_SKY_PERCENT` are
+    also excluded, since clouds would obscure the object regardless of
+    its position in the sky. Sample times outside the forecast's
+    coverage are not excluded on cloud-cover grounds (there is simply no
+    data to judge them by).
+
     Args:
         name: Case-insensitive object name (e.g. ``"Mars"``, ``"Sirius"``).
         location: The observer's resolved location.
         search_window_days: How many days into the future to search.
         step_minutes: The sampling resolution, in minutes.
+        weather_forecast: An optional hourly cloud-cover forecast for
+            ``location``, used to skip moments with an overcast sky.
 
     Returns:
         The soonest :class:`ViewingMoment` satisfying the visibility
@@ -156,14 +195,34 @@ def find_next_viewing_window(
             sun_alt_deg <= MAX_SUN_ALTITUDE_FOR_DARKNESS_DEGREES
         )
 
+    if weather_forecast is not None:
+        cloud_ok = np.array(
+            [
+                _cloud_cover_acceptable(weather_forecast, times[i].utc_datetime())
+                for i in range(len(mask))
+            ]
+        )
+        mask = mask & cloud_ok
+
     indices = np.nonzero(mask)[0]
     if indices.size == 0:
         return None
 
     idx = int(indices[0])
+    moment_time = times[idx].utc_datetime()
+    cloud_cover_pct: Optional[float] = None
+    weather_description: Optional[str] = None
+    if weather_forecast is not None:
+        cloud_cover_pct = weather_forecast.cloud_cover_at(moment_time)
+        weather_code = weather_forecast.weather_code_at(moment_time)
+        if weather_code is not None:
+            weather_description = openmeteo.describe_weather_code(weather_code)
+
     return ViewingMoment(
-        time=times[idx].utc_datetime(),
+        time=moment_time,
         altitude_degrees=round(float(alt_deg[idx]), 2),
         azimuth_degrees=round(float(az_deg[idx]), 2),
         sun_altitude_degrees=round(float(sun_alt_deg[idx]), 2),
+        cloud_cover_pct=cloud_cover_pct,
+        weather_description=weather_description,
     )

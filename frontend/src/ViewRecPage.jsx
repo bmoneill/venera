@@ -273,6 +273,23 @@ export default function ViewRecPage() {
                                     <span className="data-unit">°</span>
                                 </span>
                             </div>
+                            {result.cloud_cover_pct != null && (
+                                <div className="data-cell">
+                                    <span
+                                        className="data-icon"
+                                        aria-hidden="true"
+                                    >
+                                        ☁
+                                    </span>
+                                    <span className="data-label">
+                                        Cloud Cover
+                                    </span>
+                                    <span className="data-value">
+                                        {result.cloud_cover_pct.toFixed(0)}
+                                        <span className="data-unit">%</span>
+                                    </span>
+                                </div>
+                            )}
                         </div>
                     )}
                 </div>

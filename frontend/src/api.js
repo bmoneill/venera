@@ -75,3 +75,8 @@ export async function fetchViewingRecommendation(name, coordinates) {
     const params = new URLSearchParams({ name, coordinates })
     return apiFetch(`/api/viewrec?${params}`)
 }
+
+export async function fetchWeather(coordinates) {
+    const params = new URLSearchParams({ coordinates })
+    return apiFetch(`/api/weather?${params}`)
+}

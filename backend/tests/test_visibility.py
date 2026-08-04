@@ -6,7 +6,7 @@ from unittest.mock import MagicMock
 import numpy as np
 import pytest
 
-from backend import visibility
+from backend import openmeteo, visibility
 from backend.geodata import ResolvedLocation
 
 LOCATION = ResolvedLocation(latitude=48.8566, longitude=2.3522, label="Paris, France")
@@ -224,3 +224,95 @@ class TestFindNextViewingWindow:
         _patch_astronomy(monkeypatch, target_alt=[0.0], target_az=[0.0], sun_alt=[0.0])
         with pytest.raises(visibility.UnknownObjectError):
             visibility.find_next_viewing_window("not-a-real-object", LOCATION)
+
+
+# ---------------------------------------------------------------------------
+# Weather integration
+# ---------------------------------------------------------------------------
+
+
+class TestFindNextViewingWindowWeather:
+    """Tests for the ``weather_forecast`` integration."""
+
+    def test_excludes_moments_with_excessive_cloud_cover(self, monkeypatch):
+        """A moment that is otherwise clear should be skipped if overcast."""
+        _patch_astronomy(
+            monkeypatch,
+            target_alt=[20.0, 20.0, 20.0],
+            target_az=[100.0, 100.0, 100.0],
+            sun_alt=[-20.0, -20.0, -20.0],
+        )
+        forecast = openmeteo.HourlyForecast(
+            times=[
+                datetime(2024, 1, 1, 0, 0, tzinfo=timezone.utc),
+                datetime(2024, 1, 1, 0, 1, tzinfo=timezone.utc),
+                datetime(2024, 1, 1, 0, 2, tzinfo=timezone.utc),
+            ],
+            cloud_cover_pct=[90.0, 80.0, 20.0],
+            precipitation_probability_pct=[0.0, 0.0, 0.0],
+            weather_code=[3, 3, 1],
+        )
+        moment = visibility.find_next_viewing_window(
+            "mars", LOCATION, weather_forecast=forecast
+        )
+        assert moment is not None
+        assert moment.time == datetime(2024, 1, 1, 0, 2, tzinfo=timezone.utc)
+        assert moment.cloud_cover_pct == pytest.approx(20.0)
+        assert moment.weather_description == "Mainly clear"
+
+    def test_all_moments_overcast_returns_none(self, monkeypatch):
+        """If every sample is too cloudy, no viewing moment should be found."""
+        _patch_astronomy(
+            monkeypatch,
+            target_alt=[20.0, 20.0],
+            target_az=[100.0, 100.0],
+            sun_alt=[-20.0, -20.0],
+        )
+        forecast = openmeteo.HourlyForecast(
+            times=[
+                datetime(2024, 1, 1, 0, 0, tzinfo=timezone.utc),
+                datetime(2024, 1, 1, 0, 1, tzinfo=timezone.utc),
+            ],
+            cloud_cover_pct=[90.0, 95.0],
+            precipitation_probability_pct=[0.0, 0.0],
+            weather_code=[3, 3],
+        )
+        moment = visibility.find_next_viewing_window(
+            "mars", LOCATION, weather_forecast=forecast
+        )
+        assert moment is None
+
+    def test_samples_outside_forecast_range_are_not_excluded(self, monkeypatch):
+        """Sample times with no forecast coverage should not be filtered out."""
+        _patch_astronomy(
+            monkeypatch,
+            target_alt=[20.0, 20.0],
+            target_az=[100.0, 100.0],
+            sun_alt=[-20.0, -20.0],
+        )
+        # The forecast only covers a time range well before the samples.
+        forecast = openmeteo.HourlyForecast(
+            times=[datetime(2020, 1, 1, tzinfo=timezone.utc)],
+            cloud_cover_pct=[100.0],
+            precipitation_probability_pct=[0.0],
+            weather_code=[3],
+        )
+        moment = visibility.find_next_viewing_window(
+            "mars", LOCATION, weather_forecast=forecast
+        )
+        assert moment is not None
+        assert moment.cloud_cover_pct is None
+        assert moment.weather_description is None
+
+    def test_without_forecast_ignores_cloud_cover(self, monkeypatch):
+        """Omitting ``weather_forecast`` should preserve prior (non-weather) behaviour."""
+        _patch_astronomy(
+            monkeypatch,
+            target_alt=[20.0],
+            target_az=[100.0],
+            sun_alt=[-20.0],
+        )
+        moment = visibility.find_next_viewing_window("mars", LOCATION)
+        assert moment is not None
+        assert moment.cloud_cover_pct is None
+        assert moment.weather_description is None

@@ -6,9 +6,22 @@ from unittest.mock import MagicMock
 import pytest
 
 from backend import viewrec
+from backend.openmeteo import WeatherServiceError
 from backend.visibility import ViewingMoment
 
 MARS_IN_PARIS = {"name": "Mars", "coordinates": "Paris, France"}
+
+
+@pytest.fixture(autouse=True)
+def _no_weather_by_default(monkeypatch):
+    """By default, skip real network calls to the Open-Meteo service.
+
+    Individual tests that care about weather integration override this
+    via ``monkeypatch`` directly.
+    """
+    monkeypatch.setattr(
+        viewrec, "_fetch_weather_forecast", MagicMock(return_value=None)
+    )
 
 
 def _patch_visibility(monkeypatch, moment):
@@ -159,3 +172,75 @@ class TestViewRecErrors:
         with PlainClient(app) as plain_client:
             response = plain_client.get("/api/viewrec", params=MARS_IN_PARIS)
         assert response.status_code == 401
+
+
+# ---------------------------------------------------------------------------
+# Weather integration
+# ---------------------------------------------------------------------------
+
+
+WEATHER_MOMENT = ViewingMoment(
+    time=datetime(2024, 6, 1, 22, 30, tzinfo=timezone.utc),
+    altitude_degrees=42.5,
+    azimuth_degrees=180.0,
+    sun_altitude_degrees=-15.0,
+    cloud_cover_pct=18.0,
+    weather_description="Mainly clear",
+)
+
+
+class TestViewRecWeatherIntegration:
+    """Tests for the "When to View" algorithm's weather integration."""
+
+    def test_response_includes_weather_fields(self, monkeypatch, client):
+        monkeypatch.setattr(
+            viewrec, "_fetch_weather_forecast", MagicMock(return_value=MagicMock())
+        )
+        _patch_visibility(monkeypatch, WEATHER_MOMENT)
+        response = client.get("/api/viewrec", params=MARS_IN_PARIS)
+        data = response.json()
+        assert data["cloud_cover_pct"] == pytest.approx(18.0)
+        assert data["weather_description"] == "Mainly clear"
+
+    def test_message_mentions_expected_sky(self, monkeypatch, client):
+        monkeypatch.setattr(
+            viewrec, "_fetch_weather_forecast", MagicMock(return_value=MagicMock())
+        )
+        _patch_visibility(monkeypatch, WEATHER_MOMENT)
+        response = client.get("/api/viewrec", params=MARS_IN_PARIS)
+        assert "mainly clear" in response.json()["message"].lower()
+
+    def test_weather_forecast_passed_to_visibility_algorithm(self, monkeypatch, client):
+        sentinel_forecast = MagicMock()
+        monkeypatch.setattr(
+            viewrec,
+            "_fetch_weather_forecast",
+            MagicMock(return_value=sentinel_forecast),
+        )
+        mock_find = _patch_visibility(monkeypatch, SAMPLE_MOMENT)
+        client.get("/api/viewrec", params=MARS_IN_PARIS)
+        _, kwargs = mock_find.call_args
+        assert kwargs["weather_forecast"] is sentinel_forecast
+
+    def test_missing_weather_fields_when_forecast_unavailable(
+        self, monkeypatch, client
+    ):
+        # The autouse fixture already makes _fetch_weather_forecast return None.
+        _patch_visibility(monkeypatch, SAMPLE_MOMENT)
+        response = client.get("/api/viewrec", params=MARS_IN_PARIS)
+        data = response.json()
+        assert data["cloud_cover_pct"] is None
+        assert data["weather_description"] is None
+
+    def test_weather_service_error_degrades_gracefully(self, monkeypatch, client):
+        """A real weather-service failure should not break the recommendation."""
+        monkeypatch.undo()  # remove the autouse override for this test
+        monkeypatch.setattr(
+            viewrec.openmeteo,
+            "fetch_hourly_forecast",
+            MagicMock(side_effect=WeatherServiceError("network unreachable")),
+        )
+        _patch_visibility(monkeypatch, SAMPLE_MOMENT)
+        response = client.get("/api/viewrec", params=MARS_IN_PARIS)
+        assert response.status_code == 200
+        assert response.json()["cloud_cover_pct"] is None
