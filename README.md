@@ -34,7 +34,8 @@ for weather data (TODO).
 
 - [x] Search for celestial objects
 - [ ] Search for celestial events
-- [ ] Recommend best times and locations for observing celestial events / objects
+- [ ] Remove user auth flow
+- [x] Recommend best times and locations for observing celestial events / objects
 - [ ] Provide weather forecasts for observing locations
 - [ ] Provide a calendar of upcoming celestial events
 - [ ] Provide a map of observing locations
