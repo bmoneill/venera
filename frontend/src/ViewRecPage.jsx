@@ -6,7 +6,7 @@ const DEBOUNCE_MS = 200
 const MIN_QUERY_LENGTH = 2
 
 /**
- * ViewRecPage lets authenticated users find the soonest time a celestial
+ * ViewRecPage lets users find the soonest time a celestial
  * object will be in clear view from their municipality. The municipality
  * field offers text-completion suggestions sourced from the municipality
  * gazetteer as the user types.

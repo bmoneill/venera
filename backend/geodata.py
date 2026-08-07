@@ -1,39 +1,31 @@
 """Static municipality gazetteer used to resolve an observer's location.
 
 This module provides a small, self-contained "geocoder" backed entirely by
-static data bundled with the application (no network access or third-party
-geocoding service is used). A municipality is described by its name,
-territory (state/province/region), country, and latitude/longitude in
-decimal degrees.
+static data (no network access or third-party geocoding service is used).
+A municipality is described by its name, territory (state/province/region),
+country, and latitude/longitude in decimal degrees.
 
-Two interchangeable storage formats are supported:
-
-* A CSV file (see ``backend/data/municipalities.csv``), the canonical
-  source of truth.
-* A SQLite database (see ``backend/data/municipalities.db``), which can be
-  generated from the CSV via :func:`build_sqlite_from_csv` and is useful
-  when a queryable on-disk format is preferred over parsing a flat file
-  on every startup.
-
-The active source is selected at runtime via the ``MUNICIPALITY_SOURCE``
-environment variable (``"csv"`` or ``"sqlite"``, defaulting to ``"csv"``).
+Municipality locations are persisted in the application's SQLAlchemy-managed
+database (see :mod:`backend.models`), which is seeded on first use from the
+bundled CSV source (``backend/data/municipalities.csv``) via
+:func:`seed_municipalities_from_csv`.
 """
 
 import csv
-import os
 import re
-import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable, Optional
 
+from sqlalchemy.orm import Session
+
+from .database import SessionLocal
+from .models import Municipality as MunicipalityRow
+
 _DATA_DIR: Path = Path(__file__).resolve().parent / "data"
 DEFAULT_CSV_PATH: Path = _DATA_DIR / "municipalities.csv"
-DEFAULT_SQLITE_PATH: Path = _DATA_DIR / "municipalities.db"
-DEFAULT_TABLE_NAME: str = "municipalities"
 
 _CSV_FIELDS: tuple[str, ...] = ("name", "territory", "country", "latitude", "longitude")
-_IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 # Matches "<lat>, <lon>" or "<lat> <lon>", e.g. "48.8566, 2.3522" or
 # "-33.8688 151.2093". Accepts an optional leading sign and decimals.
@@ -186,120 +178,66 @@ def load_from_csv(path: "str | Path" = DEFAULT_CSV_PATH) -> list[Municipality]:
 
 
 # ---------------------------------------------------------------------------
-# SQLite parsing
+# Database-backed persistence
 # ---------------------------------------------------------------------------
 
 
-def _validate_identifier(identifier: str) -> str:
-    """Validate that ``identifier`` is safe to interpolate into raw SQL.
+def load_from_db(session: Session) -> list[Municipality]:
+    """Load all municipalities from the application database.
 
     Args:
-        identifier: The candidate SQL identifier (e.g. a table name).
+        session: An active SQLAlchemy session.
 
     Returns:
-        The identifier unchanged, if valid.
-
-    Raises:
-        ValueError: If the identifier is not a simple alphanumeric/underscore
-            token (i.e. it could not plausibly be a legitimate table name).
+        A list of :class:`Municipality` instances, ordered by primary key.
     """
-    if not _IDENTIFIER_RE.match(identifier):
-        raise ValueError(f"Invalid SQL identifier: {identifier!r}")
-    return identifier
-
-
-def load_from_sqlite(
-    path: "str | Path" = DEFAULT_SQLITE_PATH,
-    table: str = DEFAULT_TABLE_NAME,
-) -> list[Municipality]:
-    """Parse a municipality gazetteer from a SQLite database.
-
-    The table must have (at least) the columns
-    ``name, territory, country, latitude, longitude``.
-
-    Args:
-        path: Path to the SQLite database file.
-        table: Name of the table containing municipality rows.
-
-    Returns:
-        A list of :class:`Municipality` instances, in row order.
-
-    Raises:
-        FileNotFoundError: If ``path`` does not exist.
-        ValueError: If ``table`` is not a valid SQL identifier.
-        sqlite3.Error: If the query fails (e.g. the table does not exist).
-    """
-    path = Path(path)
-    if not path.exists():
-        raise FileNotFoundError(f"SQLite database not found: {path}")
-    table = _validate_identifier(table)
-
-    with sqlite3.connect(str(path)) as conn:
-        conn.row_factory = sqlite3.Row
-        cursor = conn.execute(
-            f"SELECT name, territory, country, latitude, longitude FROM {table}"  # noqa: S608
+    rows = session.query(MunicipalityRow).order_by(MunicipalityRow.id).all()
+    return [
+        Municipality(
+            name=row.name,
+            territory=row.territory,
+            country=row.country,
+            latitude=row.latitude,
+            longitude=row.longitude,
         )
-        return [
-            Municipality(
-                name=row["name"],
-                territory=row["territory"],
-                country=row["country"],
-                latitude=float(row["latitude"]),
-                longitude=float(row["longitude"]),
-            )
-            for row in cursor.fetchall()
-        ]
+        for row in rows
+    ]
 
 
-def build_sqlite_from_csv(
-    csv_path: "str | Path" = DEFAULT_CSV_PATH,
-    sqlite_path: "str | Path" = DEFAULT_SQLITE_PATH,
-    table: str = DEFAULT_TABLE_NAME,
+def seed_municipalities_from_csv(
+    session: Session, csv_path: "str | Path" = DEFAULT_CSV_PATH
 ) -> int:
-    """Build (or rebuild) a SQLite gazetteer database from a CSV source.
+    """Populate the ``municipalities`` table from the CSV source.
 
-    This lets the same static dataset be served from either storage
-    format: the CSV is the canonical source, and this function produces an
-    equivalent SQLite database for deployments that prefer querying a
-    database file.
+    This is a no-op if the table is already populated, so it is safe to
+    call unconditionally at application startup.
 
     Args:
-        csv_path: Path to the source CSV file.
-        sqlite_path: Path where the SQLite database should be written. Any
-            existing file at this path is replaced.
-        table: Name of the table to create.
+        session: An active SQLAlchemy session.
+        csv_path: Path to the CSV file to seed from.
 
     Returns:
-        The number of municipality rows written.
+        The number of municipality rows inserted (``0`` if the table was
+        already populated).
     """
-    table = _validate_identifier(table)
+    already_seeded = session.query(MunicipalityRow.id).first() is not None
+    if already_seeded:
+        return 0
+
     municipalities = load_from_csv(csv_path)
-
-    sqlite_path = Path(sqlite_path)
-    sqlite_path.parent.mkdir(parents=True, exist_ok=True)
-    if sqlite_path.exists():
-        sqlite_path.unlink()
-
-    with sqlite3.connect(str(sqlite_path)) as conn:
-        conn.execute(
-            f"CREATE TABLE {table} ("  # noqa: S608
-            "name TEXT NOT NULL, "
-            "territory TEXT NOT NULL, "
-            "country TEXT NOT NULL, "
-            "latitude REAL NOT NULL, "
-            "longitude REAL NOT NULL"
-            ")"
-        )
-        conn.executemany(
-            f"INSERT INTO {table} (name, territory, country, latitude, longitude) "  # noqa: S608
-            "VALUES (?, ?, ?, ?, ?)",
-            [
-                (m.name, m.territory, m.country, m.latitude, m.longitude)
-                for m in municipalities
-            ],
-        )
-        conn.commit()
-
+    session.bulk_save_objects(
+        [
+            MunicipalityRow(
+                name=m.name,
+                territory=m.territory,
+                country=m.country,
+                latitude=m.latitude,
+                longitude=m.longitude,
+            )
+            for m in municipalities
+        ]
+    )
+    session.commit()
     return len(municipalities)
 
 
@@ -329,13 +267,9 @@ class MunicipalityGazetteer:
         return cls(load_from_csv(path))
 
     @classmethod
-    def from_sqlite(
-        cls,
-        path: "str | Path" = DEFAULT_SQLITE_PATH,
-        table: str = DEFAULT_TABLE_NAME,
-    ) -> "MunicipalityGazetteer":
-        """Build a gazetteer by querying a SQLite database."""
-        return cls(load_from_sqlite(path, table))
+    def from_db(cls, session: Session) -> "MunicipalityGazetteer":
+        """Build a gazetteer by querying the application database."""
+        return cls(load_from_db(session))
 
     def find(
         self,
@@ -502,23 +436,20 @@ _gazetteer: Optional[MunicipalityGazetteer] = None
 def get_gazetteer() -> MunicipalityGazetteer:
     """Return the process-wide :class:`MunicipalityGazetteer`, loading it on first use.
 
-    The data source is chosen via the ``MUNICIPALITY_SOURCE`` environment
-    variable (``"csv"`` or ``"sqlite"``, defaulting to ``"csv"``), with the
-    file path overridable via ``MUNICIPALITIES_CSV_PATH`` /
-    ``MUNICIPALITIES_DB_PATH``.
+    Municipality data is read from the application's SQLAlchemy-managed
+    database (seeded from ``backend/data/municipalities.csv`` at startup —
+    see :func:`seed_municipalities_from_csv`).
 
     Returns:
         The shared :class:`MunicipalityGazetteer` instance.
     """
     global _gazetteer
     if _gazetteer is None:
-        source = os.getenv("MUNICIPALITY_SOURCE", "csv").strip().lower()
-        if source == "sqlite":
-            db_path = os.getenv("MUNICIPALITIES_DB_PATH", str(DEFAULT_SQLITE_PATH))
-            _gazetteer = MunicipalityGazetteer.from_sqlite(db_path)
-        else:
-            csv_path = os.getenv("MUNICIPALITIES_CSV_PATH", str(DEFAULT_CSV_PATH))
-            _gazetteer = MunicipalityGazetteer.from_csv(csv_path)
+        session = SessionLocal()
+        try:
+            _gazetteer = MunicipalityGazetteer.from_db(session)
+        finally:
+            session.close()
     return _gazetteer
 
 

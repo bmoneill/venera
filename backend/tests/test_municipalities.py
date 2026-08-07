@@ -42,14 +42,3 @@ class TestSuggestMunicipalities:
             "/api/municipalities", params={"query": "Paris", "limit": 0}
         )
         assert response.status_code == 422
-
-    def test_requires_authentication(self):
-        from fastapi.testclient import TestClient as PlainClient
-
-        from backend.main import app
-
-        with PlainClient(app) as plain_client:
-            response = plain_client.get(
-                "/api/municipalities", params={"query": "Paris"}
-            )
-        assert response.status_code == 401

@@ -3,7 +3,7 @@ import { fetchWeather } from './api'
 import './WeatherPage.css'
 
 /**
- * WeatherPage lets authenticated users look up current weather conditions
+ * WeatherPage lets users look up current weather conditions
  * (via Open-Meteo) for an observer location — a municipality name or raw
  * lat/long coordinates — to help judge whether the sky will be clear
  * enough for stargazing.

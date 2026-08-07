@@ -311,7 +311,7 @@ class TestSearchCoordinates:
 
 
 # ---------------------------------------------------------------------------
-# Not-found and auth tests
+# Not-found tests
 # ---------------------------------------------------------------------------
 
 
@@ -332,16 +332,3 @@ class TestSearchErrors:
         """Omitting the required ``name`` query param should return HTTP 422."""
         response = client.get("/api/search", params={"coordinates": "Paris, France"})
         assert response.status_code == 422
-
-    def test_search_requires_authentication(self):
-        """Requests without a Bearer token should receive HTTP 401."""
-        # Use a plain TestClient with NO dependency overrides.
-        from fastapi.testclient import TestClient as PlainClient
-
-        from backend.main import app
-
-        with PlainClient(app) as plain_client:
-            response = plain_client.get(
-                "/api/search", params={"name": "Sirius", "coordinates": "Paris, France"}
-            )
-        assert response.status_code == 401

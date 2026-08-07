@@ -2,12 +2,10 @@
 municipality gazetteer, used to power search-as-you-type UI components.
 """
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Query
 from pydantic import BaseModel
 
 from . import geodata
-from .auth import get_current_user
-from .models import User
 
 # ---------------------------------------------------------------------------
 # Response schema
@@ -34,7 +32,6 @@ router = APIRouter(prefix="/api")
 def suggest_municipalities(
     query: str = "",
     limit: int = Query(default=10, ge=1, le=50),
-    current_user: User = Depends(get_current_user),
 ) -> list[MunicipalitySuggestion]:
     """Suggest municipalities whose name starts with ``query``.
 
@@ -42,7 +39,6 @@ def suggest_municipalities(
         query: The partial municipality name typed by the user. A blank
             query yields no suggestions.
         limit: Maximum number of suggestions to return (1-50).
-        current_user: Authenticated user (injected by FastAPI).
 
     Returns:
         Matching municipalities as :class:`MunicipalitySuggestion`

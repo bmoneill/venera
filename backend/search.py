@@ -5,15 +5,13 @@ user-supplied observer location.
 
 from typing import cast
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel
 from skyfield.api import Star, wgs84
 
 from . import astronomy, geodata
-from .auth import get_current_user
 from .geodata import ResolvedLocation
 from .location import resolve_location
-from .models import User
 
 # ---------------------------------------------------------------------------
 # Solar-system bodies available in de421.bsp, keyed by lowercase display name.
@@ -186,7 +184,6 @@ router = APIRouter(prefix="/api")
 def search_object(
     name: str,
     coordinates: str,
-    current_user: User = Depends(get_current_user),
 ) -> SearchResult:
     """Search for a celestial object and return its position for an observer.
 
@@ -201,7 +198,6 @@ def search_object(
             coordinates or a municipality name (optionally qualified with
             a territory and/or country) resolved via the static
             municipality gazetteer.
-        current_user: Authenticated user (injected by FastAPI).
 
     Returns:
         A :class:`SearchResult` containing name, type, RA, Dec, altitude,

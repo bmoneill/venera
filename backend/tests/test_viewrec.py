@@ -164,15 +164,6 @@ class TestViewRecErrors:
         response = client.get("/api/viewrec", params={"coordinates": "Paris, France"})
         assert response.status_code == 422
 
-    def test_requires_authentication(self):
-        from fastapi.testclient import TestClient as PlainClient
-
-        from backend.main import app
-
-        with PlainClient(app) as plain_client:
-            response = plain_client.get("/api/viewrec", params=MARS_IN_PARIS)
-        assert response.status_code == 401
-
 
 # ---------------------------------------------------------------------------
 # Weather integration

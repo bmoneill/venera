@@ -2,15 +2,12 @@
 
 from typing import Any, cast
 
-from fastapi import Depends, FastAPI
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from skyfield.api import wgs84
 
-from . import astronomy
-from .auth import get_current_user
-from .auth import router as auth_router
-from .database import Base, engine
-from .models import User
+from . import astronomy, geodata
+from .database import Base, SessionLocal, engine
 from .municipalities import router as municipalities_router
 from .search import router as search_router
 from .viewrec import router as viewrec_router
@@ -18,12 +15,17 @@ from .weather import router as weather_router
 
 Base.metadata.create_all(bind=engine)
 
+_seed_session = SessionLocal()
+try:
+    geodata.seed_municipalities_from_csv(_seed_session)
+finally:
+    _seed_session.close()
+
 app = FastAPI(title="Venera API")
 app.add_middleware(
     CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"]
 )
 
-app.include_router(auth_router)
 app.include_router(search_router)
 app.include_router(viewrec_router)
 app.include_router(municipalities_router)
@@ -37,7 +39,7 @@ def health() -> dict[str, str]:
 
 
 @app.get("/api/moon")
-def moon(current_user: User = Depends(get_current_user)) -> dict[str, float]:
+def moon() -> dict[str, float]:
     """Return the Moon's current position and phase as seen from (0°, 0°)."""
     from skyfield import almanac
 

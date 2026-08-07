@@ -1,11 +1,14 @@
 """Tests for the static municipality gazetteer (``backend.geodata``)."""
 
-import sqlite3
 import textwrap
 
 import pytest
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
 
 from backend import geodata
+from backend.database import Base
+from backend.models import Municipality as MunicipalityRow
 
 SAMPLE_CSV = textwrap.dedent(
     """\
@@ -26,11 +29,16 @@ def sample_csv_path(tmp_path):
 
 
 @pytest.fixture
-def sample_sqlite_path(tmp_path, sample_csv_path):
-    """Build a SQLite database from ``sample_csv_path`` and return its path."""
-    db_path = tmp_path / "sample.db"
-    geodata.build_sqlite_from_csv(sample_csv_path, db_path)
-    return db_path
+def db_session():
+    """A fresh, isolated in-memory database session for each test."""
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(bind=engine)
+    session_factory = sessionmaker(bind=engine)
+    session = session_factory()
+    try:
+        yield session
+    finally:
+        session.close()
 
 
 # ---------------------------------------------------------------------------
@@ -80,50 +88,44 @@ class TestLoadFromCsv:
 
 
 # ---------------------------------------------------------------------------
-# SQLite parsing
+# Database-backed persistence
 # ---------------------------------------------------------------------------
 
 
-class TestLoadFromSqlite:
-    """Tests for :func:`geodata.load_from_sqlite`."""
+class TestLoadFromDb:
+    """Tests for :func:`geodata.load_from_db`."""
 
-    def test_parses_all_rows(self, sample_sqlite_path):
-        municipalities = geodata.load_from_sqlite(sample_sqlite_path)
+    def test_parses_all_rows(self, db_session, sample_csv_path):
+        geodata.seed_municipalities_from_csv(db_session, sample_csv_path)
+        municipalities = geodata.load_from_db(db_session)
         assert len(municipalities) == 3
 
-    def test_matches_csv_contents(self, sample_csv_path, sample_sqlite_path):
+    def test_matches_csv_contents(self, db_session, sample_csv_path):
+        geodata.seed_municipalities_from_csv(db_session, sample_csv_path)
         from_csv = {m.label for m in geodata.load_from_csv(sample_csv_path)}
-        from_sqlite = {m.label for m in geodata.load_from_sqlite(sample_sqlite_path)}
-        assert from_csv == from_sqlite
+        from_db = {m.label for m in geodata.load_from_db(db_session)}
+        assert from_csv == from_db
 
-    def test_missing_file_raises(self, tmp_path):
-        with pytest.raises(FileNotFoundError):
-            geodata.load_from_sqlite(tmp_path / "does-not-exist.db")
-
-    def test_invalid_table_name_raises_value_error(self, sample_sqlite_path):
-        with pytest.raises(ValueError):
-            geodata.load_from_sqlite(sample_sqlite_path, table="bad; drop table --")
-
-    def test_missing_table_raises_sqlite_error(self, tmp_path):
-        db_path = tmp_path / "empty.db"
-        sqlite3.connect(str(db_path)).close()
-        with pytest.raises(sqlite3.Error):
-            geodata.load_from_sqlite(db_path)
+    def test_empty_table_returns_empty_list(self, db_session):
+        assert geodata.load_from_db(db_session) == []
 
 
-class TestBuildSqliteFromCsv:
-    """Tests for :func:`geodata.build_sqlite_from_csv`."""
+class TestSeedMunicipalitiesFromCsv:
+    """Tests for :func:`geodata.seed_municipalities_from_csv`."""
 
-    def test_returns_row_count(self, sample_csv_path, tmp_path):
-        db_path = tmp_path / "out.db"
-        count = geodata.build_sqlite_from_csv(sample_csv_path, db_path)
+    def test_returns_row_count(self, db_session, sample_csv_path):
+        count = geodata.seed_municipalities_from_csv(db_session, sample_csv_path)
         assert count == 3
 
-    def test_overwrites_existing_file(self, sample_csv_path, tmp_path):
-        db_path = tmp_path / "out.db"
-        db_path.write_text("not a real sqlite file")
-        geodata.build_sqlite_from_csv(sample_csv_path, db_path)
-        assert len(geodata.load_from_sqlite(db_path)) == 3
+    def test_persists_rows_to_the_database(self, db_session, sample_csv_path):
+        geodata.seed_municipalities_from_csv(db_session, sample_csv_path)
+        assert db_session.query(MunicipalityRow).count() == 3
+
+    def test_is_a_no_op_when_already_seeded(self, db_session, sample_csv_path):
+        geodata.seed_municipalities_from_csv(db_session, sample_csv_path)
+        second_count = geodata.seed_municipalities_from_csv(db_session, sample_csv_path)
+        assert second_count == 0
+        assert db_session.query(MunicipalityRow).count() == 3
 
 
 # ---------------------------------------------------------------------------
@@ -159,8 +161,9 @@ class TestMunicipalityGazetteer:
         gazetteer = geodata.MunicipalityGazetteer.from_csv(sample_csv_path)
         assert gazetteer.find("Nowhereville") == []
 
-    def test_from_sqlite_builds_equivalent_index(self, sample_sqlite_path):
-        gazetteer = geodata.MunicipalityGazetteer.from_sqlite(sample_sqlite_path)
+    def test_from_db_builds_equivalent_index(self, db_session, sample_csv_path):
+        geodata.seed_municipalities_from_csv(db_session, sample_csv_path)
+        gazetteer = geodata.MunicipalityGazetteer.from_db(db_session)
         assert len(gazetteer) == 3
         assert len(gazetteer.find("paris")) == 2
 
@@ -292,7 +295,7 @@ def test_light_years_to_km():
     assert geodata.light_years_to_km(1.0) == pytest.approx(9_460_730_472_580.8)
 
 
-def test_get_gazetteer_returns_cached_singleton(monkeypatch):
+def test_get_gazetteer_returns_cached_singleton():
     geodata.reset_gazetteer_cache()
     first = geodata.get_gazetteer()
     second = geodata.get_gazetteer()

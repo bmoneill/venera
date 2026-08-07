@@ -5,14 +5,12 @@ object will be in clear view from a user-supplied observer location.
 from datetime import datetime
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel
 
 from . import openmeteo, visibility
-from .auth import get_current_user
 from .geodata import ResolvedLocation
 from .location import resolve_location
-from .models import User
 from .search import NAMED_STARS, SOLAR_SYSTEM_BODIES
 
 # ---------------------------------------------------------------------------
@@ -105,7 +103,6 @@ router = APIRouter(prefix="/api")
 def recommend_viewing_time(
     name: str,
     coordinates: str,
-    current_user: User = Depends(get_current_user),
 ) -> ViewingRecommendation:
     """Recommend the soonest time a celestial object will be in clear view.
 
@@ -119,7 +116,6 @@ def recommend_viewing_time(
         coordinates: The observer's location — either a municipality name
             (optionally qualified with a territory and/or country) or raw
             ``"lat, lon"`` coordinates.
-        current_user: Authenticated user (injected by FastAPI).
 
     Returns:
         A :class:`ViewingRecommendation` describing the soonest matching

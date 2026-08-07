@@ -1,20 +1,26 @@
-"""Command-line utility to (re)build the SQLite municipality gazetteer.
+"""Command-line utility to (re)seed the municipalities table.
 
 Run with ``python -m backend.scripts.build_municipalities_db`` from the
-``venera`` project root to regenerate ``backend/data/municipalities.db``
-from the canonical ``backend/data/municipalities.csv`` source.
+``venera`` project root to (re)populate the ``municipalities`` table in the
+application database from the canonical ``backend/data/municipalities.csv``
+source. Any existing rows are replaced.
 """
 
 from .. import geodata
+from ..database import SessionLocal
+from ..models import Municipality
 
 
 def main() -> None:
-    """Rebuild the SQLite gazetteer database from the CSV source."""
-    count = geodata.build_sqlite_from_csv()
-    print(
-        f"Wrote {count} municipalities to {geodata.DEFAULT_SQLITE_PATH} "
-        f"(table '{geodata.DEFAULT_TABLE_NAME}')."
-    )
+    """Rebuild the ``municipalities`` table from the CSV source."""
+    session = SessionLocal()
+    try:
+        session.query(Municipality).delete()
+        session.commit()
+        count = geodata.seed_municipalities_from_csv(session)
+    finally:
+        session.close()
+    print(f"Wrote {count} municipalities to the application database.")
 
 
 if __name__ == "__main__":

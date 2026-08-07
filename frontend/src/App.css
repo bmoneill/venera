@@ -299,31 +299,6 @@ body {
     color: #0a0a1a;
 }
 
-/* ── Logout button ───────────────────────────────────────── */
-.logout-btn {
-    position: absolute;
-    top: 0;
-    right: 0;
-    background: transparent;
-    border: 1px solid var(--accent);
-    border-radius: var(--radius-sm);
-    color: var(--accent);
-    font-size: 0.72rem;
-    font-weight: 600;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-    padding: 0.35rem 0.75rem;
-    cursor: pointer;
-    transition:
-        background 0.15s ease,
-        color 0.15s ease;
-}
-
-.logout-btn:hover {
-    background: var(--accent);
-    color: #0a0a1a;
-}
-
 /* ── Footer ───────────────────────────────────────────────── */
 .app-footer {
     margin-top: 2.5rem;

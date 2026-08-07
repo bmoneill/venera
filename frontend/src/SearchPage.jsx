@@ -3,7 +3,7 @@ import { searchObject } from './api'
 import './SearchPage.css'
 
 /**
- * SearchPage lets authenticated users look up a celestial object by name,
+ * SearchPage lets users look up a celestial object by name,
  * from a given observer location (a municipality name or raw lat/long
  * coordinates), and displays its position: right ascension, declination,
  * altitude, azimuth, and distance.

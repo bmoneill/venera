@@ -4,13 +4,11 @@ location, sourced from the Open-Meteo API.
 
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel
 
 from . import openmeteo
-from .auth import get_current_user
 from .location import resolve_location
-from .models import User
 
 # ---------------------------------------------------------------------------
 # Response schema
@@ -43,15 +41,13 @@ router = APIRouter(prefix="/api")
 @router.get("/weather", response_model=WeatherReport)
 def get_weather(
     coordinates: str,
-    current_user: User = Depends(get_current_user),
 ) -> WeatherReport:
     """Return current weather conditions for an observer location.
 
     Args:
         coordinates: The observer's location — either a municipality name
             (optionally qualified with a territory and/or country) or raw
-            ``"lat, lon"`` coordinates.
-        current_user: Authenticated user (injected by FastAPI).
+            "lat, lon" coordinates.
 
     Returns:
         A :class:`WeatherReport` describing current conditions at the

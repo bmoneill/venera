@@ -20,20 +20,17 @@ os.environ.setdefault("EPHEMERIS_DIR", tempfile.mkdtemp())
 import pytest
 from fastapi.testclient import TestClient
 
-from backend.auth import get_current_user
-from backend.database import SessionLocal, get_db
-from backend.models import User
+from backend.database import SessionLocal, engine, get_db
+from backend.models import Municipality
+
+# Ensure the schema exists regardless of which test module imports this
+# fixture module first (before `backend.main` has been imported).
+Municipality.metadata.create_all(bind=engine)
 
 
 @pytest.fixture
-def fake_user() -> User:
-    """A minimal :class:`User` instance used to bypass authentication."""
-    return User(id=1, email="test@example.com", hashed_password="irrelevant")
-
-
-@pytest.fixture
-def client(fake_user: User, monkeypatch):
-    """Return a :class:`TestClient` with auth and DB dependencies overridden."""
+def client():
+    """Return a :class:`TestClient` with the DB dependency overridden."""
     from backend import main  # import here so env vars are already set
 
     def override_get_db():
@@ -43,11 +40,7 @@ def client(fake_user: User, monkeypatch):
         finally:
             db.close()
 
-    def override_get_current_user() -> User:
-        return fake_user
-
     main.app.dependency_overrides[get_db] = override_get_db
-    main.app.dependency_overrides[get_current_user] = override_get_current_user
 
     yield TestClient(main.app)
 
