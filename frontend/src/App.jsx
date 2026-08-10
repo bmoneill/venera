@@ -1,5 +1,6 @@
 import { Routes, Route, NavLink } from 'react-router-dom'
 import './App.css'
+import CalendarPage from './CalendarPage'
 import MoonPage from './MoonPage'
 import SearchPage from './SearchPage'
 import ViewRecPage from './ViewRecPage'
@@ -47,6 +48,14 @@ export default function App() {
                     >
                         ☁ Weather
                     </NavLink>
+                    <NavLink
+                        to="/calendar"
+                        className={({ isActive }) =>
+                            'nav-link' + (isActive ? ' active' : '')
+                        }
+                    >
+                        🗓 Calendar
+                    </NavLink>
                 </nav>
             </header>
 
@@ -56,6 +65,7 @@ export default function App() {
                     <Route path="/search" element={<SearchPage />} />
                     <Route path="/viewrec" element={<ViewRecPage />} />
                     <Route path="/weather" element={<WeatherPage />} />
+                    <Route path="/calendar" element={<CalendarPage />} />
                 </Routes>
             </main>
 

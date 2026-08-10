@@ -16,7 +16,7 @@ into HTTP responses.
 
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Optional
+from typing import Any, Optional
 
 import numpy as np
 from skyfield.api import Star, wgs84
@@ -123,6 +123,75 @@ def _cloud_cover_acceptable(forecast: HourlyForecast, when: datetime) -> bool:
     return cloud_cover_pct <= MAX_CLOUD_COVER_FOR_CLEAR_SKY_PERCENT
 
 
+def _sample_target(
+    key: str,
+    location: ResolvedLocation,
+    search_window_days: float,
+    step_minutes: float,
+) -> tuple[Any, np.ndarray, np.ndarray, np.ndarray]:
+    """Sample a target's altitude/azimuth and the Sun's altitude over time.
+
+    Args:
+        key: Lowercase, stripped celestial object name.
+        location: The observer's resolved location.
+        search_window_days: How many days into the future to sample.
+        step_minutes: The sampling resolution, in minutes.
+
+    Returns:
+        A tuple ``(times, target_alt_deg, target_az_deg, sun_alt_deg)``,
+        where ``times`` is the Skyfield time array used for sampling and
+        the remaining elements are equal-length NumPy arrays of degrees.
+
+    Raises:
+        UnknownObjectError: If ``key`` is not a recognised object.
+    """
+    target, _type_label = _resolve_target(key)
+
+    earth = astronomy.eph["earth"]
+    sun = astronomy.eph["sun"]
+    observer = earth + wgs84.latlon(location.latitude, location.longitude)
+
+    t0 = astronomy.ts.now()
+    num_points = min(
+        MAX_SAMPLE_POINTS,
+        max(2, int((search_window_days * 24 * 60) / step_minutes) + 1),
+    )
+    t1 = astronomy.ts.tt_jd(t0.tt + search_window_days)
+    times = astronomy.ts.linspace(t0, t1, num_points)
+
+    observer_at_times = observer.at(times)
+
+    target_alt, target_az, _ = observer_at_times.observe(target).apparent().altaz()
+    sun_alt, _sun_az, _ = observer_at_times.observe(sun).apparent().altaz()
+
+    return (
+        times,
+        np.asarray(target_alt.degrees),
+        np.asarray(target_az.degrees),
+        np.asarray(sun_alt.degrees),
+    )
+
+
+def _clear_view_mask(
+    key: str, alt_deg: np.ndarray, sun_alt_deg: np.ndarray
+) -> np.ndarray:
+    """Build a boolean mask of samples satisfying the clear-view criteria.
+
+    Args:
+        key: Lowercase, stripped celestial object name.
+        alt_deg: The target's sampled altitudes, in degrees.
+        sun_alt_deg: The Sun's sampled altitudes, in degrees.
+
+    Returns:
+        A boolean array, ``True`` where the object is in clear view.
+    """
+    if key == "sun":
+        return sun_alt_deg >= MIN_SUN_ALTITUDE_DEGREES
+    return (alt_deg >= MIN_OBJECT_ALTITUDE_DEGREES) & (
+        sun_alt_deg <= MAX_SUN_ALTITUDE_FOR_DARKNESS_DEGREES
+    )
+
+
 def find_next_viewing_window(
     name: str,
     location: ResolvedLocation,
@@ -165,35 +234,11 @@ def find_next_viewing_window(
             object.
     """
     key = name.strip().lower()
-    target, _type_label = _resolve_target(key)
-
-    earth = astronomy.eph["earth"]
-    sun = astronomy.eph["sun"]
-    observer = earth + wgs84.latlon(location.latitude, location.longitude)
-
-    t0 = astronomy.ts.now()
-    num_points = min(
-        MAX_SAMPLE_POINTS,
-        max(2, int((search_window_days * 24 * 60) / step_minutes) + 1),
+    times, alt_deg, az_deg, sun_alt_deg = _sample_target(
+        key, location, search_window_days, step_minutes
     )
-    t1 = astronomy.ts.tt_jd(t0.tt + search_window_days)
-    times = astronomy.ts.linspace(t0, t1, num_points)
 
-    observer_at_times = observer.at(times)
-
-    target_alt, target_az, _ = observer_at_times.observe(target).apparent().altaz()
-    sun_alt, _sun_az, _ = observer_at_times.observe(sun).apparent().altaz()
-
-    alt_deg = np.asarray(target_alt.degrees)
-    az_deg = np.asarray(target_az.degrees)
-    sun_alt_deg = np.asarray(sun_alt.degrees)
-
-    if key == "sun":
-        mask = sun_alt_deg >= MIN_SUN_ALTITUDE_DEGREES
-    else:
-        mask = (alt_deg >= MIN_OBJECT_ALTITUDE_DEGREES) & (
-            sun_alt_deg <= MAX_SUN_ALTITUDE_FOR_DARKNESS_DEGREES
-        )
+    mask = _clear_view_mask(key, alt_deg, sun_alt_deg)
 
     if weather_forecast is not None:
         cloud_ok = np.array(
@@ -225,4 +270,56 @@ def find_next_viewing_window(
         sun_altitude_degrees=round(float(sun_alt_deg[idx]), 2),
         cloud_cover_pct=cloud_cover_pct,
         weather_description=weather_description,
+    )
+
+
+def find_best_viewing_moment(
+    name: str,
+    location: ResolvedLocation,
+    search_window_days: float = DEFAULT_SEARCH_WINDOW_DAYS,
+    step_minutes: float = DEFAULT_STEP_MINUTES,
+) -> Optional[ViewingMoment]:
+    """Find the single best (highest-altitude) clear-view moment for an object.
+
+    Unlike :func:`find_next_viewing_window`, which returns the *soonest*
+    qualifying moment, this returns the moment with the greatest altitude
+    among all qualifying samples in the window. This is intended for
+    calendar-style "best night to view X this month" summaries (see
+    :mod:`backend.calendar_events`), where the soonest moment is less
+    useful than the most favorable one.
+
+    Args:
+        name: Case-insensitive object name (e.g. ``"Mars"``, ``"Sirius"``).
+        location: The observer's resolved location.
+        search_window_days: How many days into the future to search.
+        step_minutes: The sampling resolution, in minutes.
+
+    Returns:
+        The best :class:`ViewingMoment` satisfying the visibility
+        criteria, or ``None`` if no such moment is found within the
+        search window.
+
+    Raises:
+        UnknownObjectError: If ``name`` is not a recognised celestial
+            object.
+    """
+    key = name.strip().lower()
+    times, alt_deg, az_deg, sun_alt_deg = _sample_target(
+        key, location, search_window_days, step_minutes
+    )
+
+    mask = _clear_view_mask(key, alt_deg, sun_alt_deg)
+
+    indices = np.nonzero(mask)[0]
+    if indices.size == 0:
+        return None
+
+    idx = int(indices[np.argmax(alt_deg[indices])])
+    moment_time = times[idx].utc_datetime()
+
+    return ViewingMoment(
+        time=moment_time,
+        altitude_degrees=round(float(alt_deg[idx]), 2),
+        azimuth_degrees=round(float(az_deg[idx]), 2),
+        sun_altitude_degrees=round(float(sun_alt_deg[idx]), 2),
     )

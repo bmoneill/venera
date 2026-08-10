@@ -43,3 +43,8 @@ export async function fetchWeather(coordinates) {
     const params = new URLSearchParams({ coordinates })
     return apiFetch(`/api/weather?${params}`)
 }
+
+export async function fetchCalendar(coordinates, days = 30) {
+    const params = new URLSearchParams({ coordinates, days })
+    return apiFetch(`/api/calendar?${params}`)
+}

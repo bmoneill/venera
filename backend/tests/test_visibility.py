@@ -227,6 +227,70 @@ class TestFindNextViewingWindow:
 
 
 # ---------------------------------------------------------------------------
+# find_best_viewing_moment
+# ---------------------------------------------------------------------------
+
+
+class TestFindBestViewingMoment:
+    """Tests for :func:`visibility.find_best_viewing_moment`."""
+
+    def test_returns_highest_altitude_sample_not_first(self, monkeypatch):
+        """The sample with the greatest altitude should win, even if later."""
+        _patch_astronomy(
+            monkeypatch,
+            target_alt=[20.0, 45.0, 30.0],
+            target_az=[100.0, 110.0, 120.0],
+            sun_alt=[-20.0, -20.0, -20.0],
+        )
+        moment = visibility.find_best_viewing_moment("mars", LOCATION)
+        assert moment is not None
+        assert moment.altitude_degrees == pytest.approx(45.0)
+        assert moment.azimuth_degrees == pytest.approx(110.0)
+        assert moment.time == datetime(2024, 1, 1, 0, 1, tzinfo=timezone.utc)
+
+    def test_ignores_high_altitude_samples_outside_clear_view(self, monkeypatch):
+        """A higher altitude sample during daylight should not be preferred."""
+        _patch_astronomy(
+            monkeypatch,
+            target_alt=[20.0, 60.0, 25.0],
+            target_az=[100.0, 110.0, 120.0],
+            sun_alt=[-20.0, 5.0, -20.0],
+        )
+        moment = visibility.find_best_viewing_moment("mars", LOCATION)
+        assert moment is not None
+        assert moment.altitude_degrees == pytest.approx(25.0)
+
+    def test_never_above_horizon_returns_none(self, monkeypatch):
+        """If the object never clears the altitude threshold, return None."""
+        _patch_astronomy(
+            monkeypatch,
+            target_alt=[5.0, 5.0, 5.0],
+            target_az=[0.0, 0.0, 0.0],
+            sun_alt=[-20.0, -20.0, -20.0],
+        )
+        assert visibility.find_best_viewing_moment("mars", LOCATION) is None
+
+    def test_sun_target_prefers_highest_daylight_sample(self, monkeypatch):
+        """For the Sun, the highest solar altitude sample should be preferred."""
+        _patch_astronomy(
+            monkeypatch,
+            target_alt=[0.0, 0.0, 0.0],
+            target_az=[0.0, 0.0, 0.0],
+            sun_alt=[15.0, 40.0, 20.0],
+            bsp_name="sun",
+        )
+        moment = visibility.find_best_viewing_moment("sun", LOCATION)
+        assert moment is not None
+        assert moment.sun_altitude_degrees == pytest.approx(40.0)
+
+    def test_unknown_object_raises(self, monkeypatch):
+        """An unrecognised object name should raise UnknownObjectError."""
+        _patch_astronomy(monkeypatch, target_alt=[0.0], target_az=[0.0], sun_alt=[0.0])
+        with pytest.raises(visibility.UnknownObjectError):
+            visibility.find_best_viewing_moment("not-a-real-object", LOCATION)
+
+
+# ---------------------------------------------------------------------------
 # Weather integration
 # ---------------------------------------------------------------------------
 

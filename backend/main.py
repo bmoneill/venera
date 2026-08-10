@@ -7,6 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from skyfield.api import wgs84
 
 from . import astronomy, geodata
+from .calendar import router as calendar_router
 from .database import Base, SessionLocal, engine
 from .municipalities import router as municipalities_router
 from .search import router as search_router
@@ -30,6 +31,7 @@ app.include_router(search_router)
 app.include_router(viewrec_router)
 app.include_router(municipalities_router)
 app.include_router(weather_router)
+app.include_router(calendar_router)
 
 
 @app.get("/api/health")
