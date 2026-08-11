@@ -33,10 +33,10 @@ for weather data (TODO).
 ## Features
 
 - [x] Search for celestial objects
-- [ ] Search for celestial events
+- [x] Search for celestial events
 - [x] Recommend best times and locations for observing celestial events / objects
-- [ ] Provide weather forecasts for observing locations
-- [ ] Provide a calendar of upcoming celestial events
+- [x] Provide weather forecasts for observing locations
+- [x] Provide a calendar of upcoming celestial events
 - [ ] Provide a map of observing locations
 - [ ] Utilize user location to recommend nearby observing locations
 
