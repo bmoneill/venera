@@ -19,3 +19,7 @@ src/static/img
 pyrightconfig.json
 scripts/migrate*
 .DS_Store
+
+# Raw GeoNames source dumps (multi-GB) -- see backend/scripts/import_geonames.py
+/allCountries.txt
+/admin1CodesASCII.txt
