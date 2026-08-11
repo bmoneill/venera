@@ -1,20 +1,105 @@
-import { useState } from 'react'
-import { searchObject } from './api'
+import { useState, useEffect, useRef } from 'react'
+import { searchObject, suggestObjects } from './api'
 import './SearchPage.css'
+
+const DEBOUNCE_MS = 200
+const MIN_QUERY_LENGTH = 1
 
 /**
  * SearchPage lets users look up a celestial object by name,
  * from a given observer location (a municipality name or raw lat/long
  * coordinates), and displays its position: right ascension, declination,
- * altitude, azimuth, and distance.
+ * altitude, azimuth, and distance. The object name field offers
+ * text-completion suggestions sourced from the celestial object catalog
+ * as the user types.
  */
 export default function SearchPage() {
     const [query, setQuery] = useState('')
     const [coordinates, setCoordinates] = useState('')
+    const [suggestions, setSuggestions] = useState([])
+    const [showSuggestions, setShowSuggestions] = useState(false)
+    const [highlightedIndex, setHighlightedIndex] = useState(-1)
     const [result, setResult] = useState(null)
     const [loading, setLoading] = useState(false)
     const [error, setError] = useState(null)
     const [lastQuery, setLastQuery] = useState('')
+
+    const debounceRef = useRef(null)
+    const containerRef = useRef(null)
+
+    useEffect(() => {
+        function handleClickOutside(event) {
+            if (
+                containerRef.current &&
+                !containerRef.current.contains(event.target)
+            ) {
+                setShowSuggestions(false)
+            }
+        }
+        document.addEventListener('mousedown', handleClickOutside)
+        return () =>
+            document.removeEventListener('mousedown', handleClickOutside)
+    }, [])
+
+    useEffect(() => {
+        return () => {
+            if (debounceRef.current) clearTimeout(debounceRef.current)
+        }
+    }, [])
+
+    function handleQueryChange(event) {
+        const value = event.target.value
+        setQuery(value)
+        setHighlightedIndex(-1)
+
+        if (debounceRef.current) clearTimeout(debounceRef.current)
+
+        const trimmed = value.trim()
+        if (trimmed.length < MIN_QUERY_LENGTH) {
+            setSuggestions([])
+            setShowSuggestions(false)
+            return
+        }
+
+        debounceRef.current = setTimeout(async () => {
+            try {
+                const matches = await suggestObjects(trimmed)
+                setSuggestions(matches)
+                setShowSuggestions(matches.length > 0)
+            } catch {
+                setSuggestions([])
+                setShowSuggestions(false)
+            }
+        }, DEBOUNCE_MS)
+    }
+
+    function selectSuggestion(suggestion) {
+        setQuery(suggestion.name)
+        setSuggestions([])
+        setShowSuggestions(false)
+        setHighlightedIndex(-1)
+    }
+
+    function handleKeyDown(event) {
+        if (!showSuggestions || suggestions.length === 0) return
+
+        if (event.key === 'ArrowDown') {
+            event.preventDefault()
+            setHighlightedIndex((i) => (i + 1) % suggestions.length)
+        } else if (event.key === 'ArrowUp') {
+            event.preventDefault()
+            setHighlightedIndex(
+                (i) => (i - 1 + suggestions.length) % suggestions.length
+            )
+        } else if (event.key === 'Enter') {
+            if (highlightedIndex >= 0) {
+                event.preventDefault()
+                selectSuggestion(suggestions[highlightedIndex])
+            }
+        } else if (event.key === 'Escape') {
+            setShowSuggestions(false)
+        }
+    }
 
     async function handleSearch(e) {
         e.preventDefault()
@@ -26,6 +111,7 @@ export default function SearchPage() {
         setError(null)
         setResult(null)
         setLastQuery(trimmedName)
+        setShowSuggestions(false)
 
         try {
             const data = await searchObject(trimmedName, trimmedCoordinates)
@@ -40,15 +126,55 @@ export default function SearchPage() {
     return (
         <div className="search-container">
             <form className="search-form" onSubmit={handleSearch}>
-                <input
-                    className="search-input"
-                    type="text"
-                    placeholder="e.g. Sirius, Mars, Polaris…"
-                    value={query}
-                    onChange={(e) => setQuery(e.target.value)}
-                    aria-label="Celestial object name"
-                    autoFocus
-                />
+                <div className="object-field" ref={containerRef}>
+                    <input
+                        className="search-input"
+                        type="text"
+                        placeholder="e.g. Sirius, Mars, Polaris…"
+                        value={query}
+                        onChange={handleQueryChange}
+                        onKeyDown={handleKeyDown}
+                        onFocus={() =>
+                            suggestions.length > 0 && setShowSuggestions(true)
+                        }
+                        aria-label="Celestial object name"
+                        role="combobox"
+                        aria-expanded={showSuggestions}
+                        aria-autocomplete="list"
+                        autoComplete="off"
+                        autoFocus
+                    />
+                    {showSuggestions && (
+                        <ul className="suggestions-list" role="listbox">
+                            {suggestions.map((suggestion, index) => (
+                                <li
+                                    key={`${suggestion.name}-${index}`}
+                                    role="option"
+                                    aria-selected={index === highlightedIndex}
+                                    className={
+                                        'suggestion-item' +
+                                        (index === highlightedIndex
+                                            ? ' highlighted'
+                                            : '')
+                                    }
+                                    onMouseDown={() =>
+                                        selectSuggestion(suggestion)
+                                    }
+                                    onMouseEnter={() =>
+                                        setHighlightedIndex(index)
+                                    }
+                                >
+                                    <span className="suggestion-name">
+                                        {suggestion.name}
+                                    </span>
+                                    <span className="suggestion-type">
+                                        {suggestion.type}
+                                    </span>
+                                </li>
+                            ))}
+                        </ul>
+                    )}
+                </div>
                 <input
                     className="search-input"
                     type="text"

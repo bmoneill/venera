@@ -16,8 +16,9 @@ from typing import Optional
 
 from skyfield import almanac
 
-from . import astronomy, visibility
+from . import astronomy, openmeteo, visibility
 from .geodata import ResolvedLocation
+from .openmeteo import HourlyForecast
 from .search import SOLAR_SYSTEM_BODIES
 
 # ---------------------------------------------------------------------------
@@ -78,6 +79,10 @@ class CalendarEvent:
         description: A longer human-readable description.
         altitude_degrees: The object's altitude at ``time``, if applicable.
         azimuth_degrees: The object's azimuth at ``time``, if applicable.
+        cloud_cover_pct: The forecast total cloud cover at ``time``, as a
+            percentage, if a weather forecast was available.
+        weather_description: A short human-readable description of the
+            forecast sky conditions at ``time``, if available.
     """
 
     time: datetime
@@ -87,6 +92,8 @@ class CalendarEvent:
     description: str
     altitude_degrees: Optional[float] = None
     azimuth_degrees: Optional[float] = None
+    cloud_cover_pct: Optional[float] = None
+    weather_description: Optional[str] = None
 
 
 # ---------------------------------------------------------------------------
@@ -103,6 +110,34 @@ def _require_ephemeris() -> None:
     """
     if astronomy.eph is None or astronomy.ts is None:
         raise EphemerisUnavailableError("The astronomical ephemeris is not available.")
+
+
+def _fetch_weather_forecast(
+    location: ResolvedLocation, window_days: float
+) -> Optional[HourlyForecast]:
+    """Best-effort fetch of an hourly cloud-cover forecast for a location.
+
+    The calendar is still fully functional without weather data (it
+    simply won't factor in cloud cover), so failures talking to the
+    Open-Meteo API are swallowed here rather than propagated as an HTTP
+    error. Open-Meteo's forecast horizon is shorter than the maximum
+    calendar window, so events later in a long window may simply have no
+    weather data attached.
+
+    Args:
+        location: The observer's resolved location.
+        window_days: How many days the calendar covers.
+
+    Returns:
+        The :class:`~backend.openmeteo.HourlyForecast`, or ``None`` if it
+        could not be retrieved.
+    """
+    try:
+        return openmeteo.fetch_hourly_forecast(
+            location.latitude, location.longitude, days=int(window_days) + 1
+        )
+    except openmeteo.WeatherServiceError:
+        return None
 
 
 # ---------------------------------------------------------------------------
@@ -151,6 +186,7 @@ def best_viewing_events(
     location: ResolvedLocation,
     window_days: float = DEFAULT_CALENDAR_WINDOW_DAYS,
     step_minutes: float = CALENDAR_STEP_MINUTES,
+    weather_forecast: Optional[HourlyForecast] = None,
 ) -> list[CalendarEvent]:
     """Return the best clear-view moment for each visible planet.
 
@@ -164,6 +200,9 @@ def best_viewing_events(
         location: The observer's resolved location.
         window_days: How many days into the future to search.
         step_minutes: The sampling resolution, in minutes.
+        weather_forecast: An optional hourly cloud-cover forecast for
+            ``location``, used to prefer/annotate moments with clearer
+            skies.
 
     Returns:
         A list of :class:`CalendarEvent` instances, one per visible
@@ -177,23 +216,32 @@ def best_viewing_events(
     events: list[CalendarEvent] = []
     for key in CALENDAR_PLANETS:
         moment = visibility.find_best_viewing_moment(
-            key, location, search_window_days=window_days, step_minutes=step_minutes
+            key,
+            location,
+            search_window_days=window_days,
+            step_minutes=step_minutes,
+            weather_forecast=weather_forecast,
         )
         if moment is None:
             continue
         display_name = key.capitalize()
+        description = (
+            f"{display_name} reaches its highest point in a dark sky "
+            f"as seen from {location.label}."
+        )
+        if moment.weather_description is not None:
+            description += f" Expected sky: {moment.weather_description.lower()}."
         events.append(
             CalendarEvent(
                 time=moment.time,
                 name=display_name,
                 category="best_view",
                 title=f"Best time to view {display_name}",
-                description=(
-                    f"{display_name} reaches its highest point in a dark sky "
-                    f"as seen from {location.label}."
-                ),
+                description=description,
                 altitude_degrees=moment.altitude_degrees,
                 azimuth_degrees=moment.azimuth_degrees,
+                cloud_cover_pct=moment.cloud_cover_pct,
+                weather_description=moment.weather_description,
             )
         )
     return events
@@ -206,7 +254,9 @@ def build_calendar(
 ) -> list[CalendarEvent]:
     """Build the full, chronologically-sorted calendar for a location.
 
-    Combines :func:`moon_phase_events` and :func:`best_viewing_events`.
+    Combines :func:`moon_phase_events` and :func:`best_viewing_events`,
+    layering in an Open-Meteo cloud-cover forecast (best-effort) for
+    whichever portion of the window it covers.
 
     Args:
         location: The observer's resolved location.
@@ -219,8 +269,9 @@ def build_calendar(
     Raises:
         EphemerisUnavailableError: If the Skyfield ephemeris is unavailable.
     """
+    weather_forecast = _fetch_weather_forecast(location, window_days)
     events = moon_phase_events(window_days) + best_viewing_events(
-        location, window_days, step_minutes
+        location, window_days, step_minutes, weather_forecast=weather_forecast
     )
     events.sort(key=lambda event: event.time)
     return events

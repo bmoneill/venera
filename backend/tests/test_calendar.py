@@ -70,6 +70,8 @@ class TestCalendarEndpoint:
             "description",
             "altitude_degrees",
             "azimuth_degrees",
+            "cloud_cover_pct",
+            "weather_description",
         }
 
     def test_moon_phase_event_omits_altaz(self, client, monkeypatch):
@@ -85,6 +87,33 @@ class TestCalendarEndpoint:
         mars_event = response.json()["events"][1]
         assert mars_event["altitude_degrees"] == pytest.approx(52.3)
         assert mars_event["azimuth_degrees"] == pytest.approx(178.5)
+
+    def test_event_includes_weather_fields_when_present(self, client, monkeypatch):
+        events = [
+            calendar_events.CalendarEvent(
+                time=datetime(2024, 6, 10, 22, 0, tzinfo=timezone.utc),
+                name="Mars",
+                category="best_view",
+                title="Best time to view Mars",
+                description="Mars reaches its highest point in a dark sky.",
+                altitude_degrees=52.3,
+                azimuth_degrees=178.5,
+                cloud_cover_pct=12.0,
+                weather_description="Mainly clear",
+            ),
+        ]
+        _patch_build_calendar(monkeypatch, value=events)
+        response = client.get("/api/calendar", params=PARIS)
+        mars_event = response.json()["events"][0]
+        assert mars_event["cloud_cover_pct"] == pytest.approx(12.0)
+        assert mars_event["weather_description"] == "Mainly clear"
+
+    def test_event_weather_fields_default_to_none(self, client, monkeypatch):
+        _patch_build_calendar(monkeypatch, value=SAMPLE_EVENTS)
+        response = client.get("/api/calendar", params=PARIS)
+        for event in response.json()["events"]:
+            assert event["cloud_cover_pct"] is None
+            assert event["weather_description"] is None
 
     def test_no_events_returns_empty_list(self, client, monkeypatch):
         _patch_build_calendar(monkeypatch, value=[])

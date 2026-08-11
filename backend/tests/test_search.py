@@ -151,6 +151,26 @@ class TestSearchNamedStar:
             )
             assert response.status_code == 200, f"Star '{star_name}' not found"
 
+    def test_returns_correct_ra_dec_for_altair(self, client, monkeypatch):
+        """RA and Dec for Altair should match the mocked apparent position."""
+        _patch_astronomy(monkeypatch, ra_hours=19.85, dec_degrees=8.87)
+        response = client.get(
+            "/api/search", params={"name": "Altair", "coordinates": "Paris, France"}
+        )
+        data = response.json()
+        assert abs(data["ra_hours"] - 19.85) < 0.001
+        assert abs(data["dec_degrees"] - 8.87) < 0.001
+
+    def test_returns_distance_for_achernar(self, client, monkeypatch):
+        """Distance for Achernar should derive from its catalog light-year value."""
+        _patch_astronomy(monkeypatch)
+        response = client.get(
+            "/api/search", params={"name": "Achernar", "coordinates": "Paris, France"}
+        )
+        data = response.json()
+        expected_km = NAMED_STARS["achernar"][2] * 9_460_730_472_580.8
+        assert abs(data["distance_km"] - expected_km) / expected_km < 1e-6
+
 
 # ---------------------------------------------------------------------------
 # Solar-system body searches (ephemeris mocked)
@@ -308,6 +328,79 @@ class TestSearchCoordinates:
             "/api/search", params={"name": "Sirius", "coordinates": "   "}
         )
         assert response.status_code == 400
+
+
+# ---------------------------------------------------------------------------
+# Object suggestions (autocomplete) tests
+# ---------------------------------------------------------------------------
+
+
+class TestSuggestObjects:
+    """Tests for the ``/api/search/suggestions`` text-completion endpoint."""
+
+    def test_returns_matches_for_prefix(self, client):
+        response = client.get("/api/search/suggestions", params={"query": "sir"})
+        assert response.status_code == 200
+        data = response.json()
+        assert any(item["name"] == "Sirius" for item in data)
+
+    def test_matches_solar_system_bodies(self, client):
+        response = client.get("/api/search/suggestions", params={"query": "mar"})
+        assert response.status_code == 200
+        data = response.json()
+        assert any(item["name"] == "Mars" and item["type"] == "Planet" for item in data)
+
+    def test_result_shape(self, client):
+        response = client.get("/api/search/suggestions", params={"query": "sir"})
+        item = response.json()[0]
+        assert set(item.keys()) == {"name", "type"}
+
+    def test_is_case_insensitive(self, client):
+        response = client.get("/api/search/suggestions", params={"query": "SIR"})
+        assert response.status_code == 200
+        assert any(item["name"] == "Sirius" for item in response.json())
+
+    def test_blank_query_returns_empty_list(self, client):
+        response = client.get("/api/search/suggestions", params={"query": ""})
+        assert response.status_code == 200
+        assert response.json() == []
+
+    def test_missing_query_returns_empty_list(self, client):
+        response = client.get("/api/search/suggestions")
+        assert response.status_code == 200
+        assert response.json() == []
+
+    def test_no_match_returns_empty_list(self, client):
+        response = client.get(
+            "/api/search/suggestions", params={"query": "zzznotarealobject"}
+        )
+        assert response.status_code == 200
+        assert response.json() == []
+
+    def test_limit_is_respected(self, client):
+        response = client.get(
+            "/api/search/suggestions", params={"query": "a", "limit": 2}
+        )
+        assert response.status_code == 200
+        assert len(response.json()) <= 2
+
+    def test_limit_out_of_range_returns_422(self, client):
+        response = client.get(
+            "/api/search/suggestions", params={"query": "sir", "limit": 0}
+        )
+        assert response.status_code == 422
+
+    def test_results_sorted_alphabetically(self, client):
+        response = client.get(
+            "/api/search/suggestions", params={"query": "a", "limit": 50}
+        )
+        names = [item["name"] for item in response.json()]
+        assert names == sorted(names)
+
+    def test_multi_word_star_name_matches(self, client):
+        response = client.get("/api/search/suggestions", params={"query": "alpha cent"})
+        assert response.status_code == 200
+        assert any(item["name"] == "Alpha Centauri" for item in response.json())
 
 
 # ---------------------------------------------------------------------------

@@ -289,6 +289,67 @@ class TestFindBestViewingMoment:
         with pytest.raises(visibility.UnknownObjectError):
             visibility.find_best_viewing_moment("not-a-real-object", LOCATION)
 
+    def test_excludes_overcast_sample_even_if_highest_altitude(self, monkeypatch):
+        """An overcast sample should be skipped even if it has the best altitude."""
+        _patch_astronomy(
+            monkeypatch,
+            target_alt=[20.0, 45.0, 30.0],
+            target_az=[100.0, 110.0, 120.0],
+            sun_alt=[-20.0, -20.0, -20.0],
+        )
+        forecast = openmeteo.HourlyForecast(
+            times=[
+                datetime(2024, 1, 1, 0, 0, tzinfo=timezone.utc),
+                datetime(2024, 1, 1, 0, 1, tzinfo=timezone.utc),
+                datetime(2024, 1, 1, 0, 2, tzinfo=timezone.utc),
+            ],
+            cloud_cover_pct=[10.0, 90.0, 5.0],
+            precipitation_probability_pct=[0.0, 0.0, 0.0],
+            weather_code=[1, 3, 0],
+        )
+        moment = visibility.find_best_viewing_moment(
+            "mars", LOCATION, weather_forecast=forecast
+        )
+        assert moment is not None
+        assert moment.altitude_degrees == pytest.approx(30.0)
+        assert moment.cloud_cover_pct == pytest.approx(5.0)
+        assert moment.weather_description == "Clear sky"
+
+    def test_all_overcast_returns_none(self, monkeypatch):
+        """If every clear-view sample is overcast, no moment should be found."""
+        _patch_astronomy(
+            monkeypatch,
+            target_alt=[20.0, 45.0],
+            target_az=[100.0, 110.0],
+            sun_alt=[-20.0, -20.0],
+        )
+        forecast = openmeteo.HourlyForecast(
+            times=[
+                datetime(2024, 1, 1, 0, 0, tzinfo=timezone.utc),
+                datetime(2024, 1, 1, 0, 1, tzinfo=timezone.utc),
+            ],
+            cloud_cover_pct=[90.0, 95.0],
+            precipitation_probability_pct=[0.0, 0.0],
+            weather_code=[3, 3],
+        )
+        moment = visibility.find_best_viewing_moment(
+            "mars", LOCATION, weather_forecast=forecast
+        )
+        assert moment is None
+
+    def test_without_forecast_omits_weather_fields(self, monkeypatch):
+        """Omitting ``weather_forecast`` should leave weather fields ``None``."""
+        _patch_astronomy(
+            monkeypatch,
+            target_alt=[20.0],
+            target_az=[100.0],
+            sun_alt=[-20.0],
+        )
+        moment = visibility.find_best_viewing_moment("mars", LOCATION)
+        assert moment is not None
+        assert moment.cloud_cover_pct is None
+        assert moment.weather_description is None
+
 
 # ---------------------------------------------------------------------------
 # Weather integration

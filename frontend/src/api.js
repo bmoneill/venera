@@ -29,6 +29,11 @@ export async function searchObject(name, coordinates) {
     return apiFetch(`/api/search?${params}`)
 }
 
+export async function suggestObjects(query, limit = 8) {
+    const params = new URLSearchParams({ query, limit })
+    return apiFetch(`/api/search/suggestions?${params}`)
+}
+
 export async function suggestMunicipalities(query, limit = 8) {
     const params = new URLSearchParams({ query, limit })
     return apiFetch(`/api/municipalities?${params}`)

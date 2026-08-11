@@ -5,11 +5,11 @@ user-supplied observer location.
 
 from typing import cast
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, Query, status
 from pydantic import BaseModel
 from skyfield.api import Star, wgs84
 
-from . import astronomy, geodata
+from . import astronomy, geodata, moons
 from .geodata import ResolvedLocation
 from .location import resolve_location
 
@@ -32,7 +32,8 @@ SOLAR_SYSTEM_BODIES: dict[str, tuple[str, str]] = {
 }
 
 # ---------------------------------------------------------------------------
-# Curated named-star catalog.
+# Curated named-star catalog of naked-eye-visible stars, covering all 21
+# first-magnitude stars plus many second-magnitude traditional/Bayer names.
 # Keys are lowercase; values are (ra_hours, dec_degrees, distance_ly) in
 # J2000. RA/Dec are sourced from the Hipparcos catalog; distances are
 # well-known approximate literature values (static, no network lookup).
@@ -79,6 +80,39 @@ NAMED_STARS: dict[str, tuple[float, float, float]] = {
     "wezen": (7.139856, -26.393208, 1600.0),
     "menkent": (14.111374, -36.369958, 61.0),
     "atria": (16.811082, -69.027717, 391.0),
+    "achernar": (1.62857, -57.23667, 139.0),
+    "altair": (19.846388, 8.868322, 17.0),
+    "alphard": (9.459789, -8.658601, 177.0),
+    "alphecca": (15.578131, 26.714694, 75.0),
+    "alpheratz": (0.13979, 29.090942, 97.0),
+    "ankaa": (0.438069, -42.305981, 77.0),
+    "denebola": (11.817657, 14.572058, 36.0),
+    "diphda": (0.726428, -17.986605, 96.0),
+    "enif": (21.736434, 9.875010, 690.0),
+    "gienah": (12.263449, -17.541929, 154.0),
+    "hamal": (2.119558, 23.462423, 66.0),
+    "kaus australis": (18.402866, -34.384617, 143.0),
+    "kochab": (14.845090, 74.155502, 126.0),
+    "markab": (23.079346, 15.205260, 133.0),
+    "menkar": (3.037739, 4.089735, 220.0),
+    "merak": (11.030689, 56.382423, 79.0),
+    "mirach": (1.162194, 35.620557, 197.0),
+    "nunki": (18.921108, -26.296722, 224.0),
+    "phecda": (11.897157, 53.694761, 84.0),
+    "rasalhague": (17.582239, 12.560034, 47.0),
+    "sabik": (17.172907, -15.724911, 88.0),
+    "sadalmelik": (22.096024, -0.319703, 520.0),
+    "sadr": (20.370461, 40.256671, 1800.0),
+    "saiph": (5.795941, -9.669605, 720.0),
+    "sargas": (17.622040, -42.997822, 272.0),
+    "scheat": (23.062942, 28.082789, 196.0),
+    "schedar": (0.675116, 56.537331, 228.0),
+    "suhail": (9.133202, -43.432588, 545.0),
+    "thuban": (14.073152, 64.375862, 303.0),
+    "unukalhai": (15.738361, 6.425628, 74.0),
+    "zosma": (11.234845, 20.523721, 58.0),
+    "zubenelgenubi": (14.847959, -16.041778, 77.0),
+    "zubeneschamali": (15.283402, -9.382916, 185.0),
 }
 
 
@@ -98,6 +132,13 @@ class SearchResult(BaseModel):
     azimuth_degrees: float
     distance_km: float
     location: str
+
+
+class ObjectSuggestion(BaseModel):
+    """A single celestial object suggestion for text-completion."""
+
+    name: str
+    type: str
 
 
 # ---------------------------------------------------------------------------
@@ -173,11 +214,104 @@ def _search_named_star(key: str, location: ResolvedLocation) -> SearchResult:
     )
 
 
+def _search_moon(key: str, location: ResolvedLocation) -> SearchResult:
+    """Compute the apparent position of a Jupiter/Saturn moon for an observer.
+
+    Combines the de421 ephemeris position of the parent planet with a
+    two-body Keplerian approximation of the moon's offset from it (see
+    :mod:`backend.moons` for the accuracy caveats of this approach).
+
+    Args:
+        key: Lowercase name of the moon (must be in ``moons.MOONS``).
+        location: The observer's resolved location.
+
+    Returns:
+        A :class:`SearchResult` with the moon's current apparent position.
+    """
+    t = astronomy.ts.now()
+    earth = astronomy.eph["earth"]
+    observer = earth + wgs84.latlon(location.latitude, location.longitude)
+    target = moons.moon_target(key)
+    apparent = observer.at(t).observe(target).apparent()
+    ra, dec, distance = apparent.radec()
+    alt, az, _ = apparent.altaz()
+    return SearchResult(
+        name=key.capitalize(),
+        type="Natural Satellite",
+        ra_hours=round(cast(float, ra.hours), 4),
+        dec_degrees=round(cast(float, dec.degrees), 4),
+        altitude_degrees=round(cast(float, alt.degrees), 2),
+        azimuth_degrees=round(cast(float, az.degrees), 2),
+        distance_km=round(cast(float, distance.km), 0),
+        location=location.label,
+    )
+
+
+def _suggest_objects(prefix: str, limit: int = 10) -> list[ObjectSuggestion]:
+    """Suggest catalog objects (solar-system bodies and named stars) whose
+    name starts with ``prefix``.
+
+    Intended for text-completion in a search-as-you-type UI (e.g. the
+    celestial object search dropdown). Matching is case-insensitive and
+    based on the object's name only.
+
+    Args:
+        prefix: The partial object name typed by the user. A blank/
+            whitespace-only prefix yields no suggestions.
+        limit: Maximum number of suggestions to return.
+
+    Returns:
+        Matching objects as :class:`ObjectSuggestion` instances, sorted
+        alphabetically by name and truncated to ``limit`` entries. Empty
+        if ``prefix`` is blank or nothing matches.
+    """
+    text = prefix.strip().lower()
+    if not text:
+        return []
+
+    matches: list[tuple[str, str]] = []
+    for key, (_, body_type) in SOLAR_SYSTEM_BODIES.items():
+        if key.startswith(text):
+            matches.append((key.capitalize(), body_type))
+    for key in NAMED_STARS:
+        if key.startswith(text):
+            matches.append((key.title(), "Star"))
+    for key in moons.MOONS:
+        if key.startswith(text):
+            matches.append((key.capitalize(), "Natural Satellite"))
+
+    matches.sort(key=lambda pair: pair[0])
+    return [ObjectSuggestion(name=n, type=t) for n, t in matches[:limit]]
+
+
 # ---------------------------------------------------------------------------
 # Router
 # ---------------------------------------------------------------------------
 
 router = APIRouter(prefix="/api")
+
+
+@router.get("/search/suggestions", response_model=list[ObjectSuggestion])
+def suggest_objects(
+    query: str = "",
+    limit: int = Query(default=10, ge=1, le=50),
+) -> list[ObjectSuggestion]:
+    """Suggest celestial objects whose name starts with ``query``.
+
+    Powers a search-as-you-type dropdown for the celestial object name
+    field, drawing from ``SOLAR_SYSTEM_BODIES``, ``NAMED_STARS``, and
+    ``moons.MOONS``.
+
+    Args:
+        query: The partial object name typed by the user. A blank query
+            yields no suggestions.
+        limit: Maximum number of suggestions to return (1-50).
+
+    Returns:
+        Matching objects as :class:`ObjectSuggestion` objects, sorted
+        alphabetically by name.
+    """
+    return _suggest_objects(query, limit=limit)
 
 
 @router.get("/search", response_model=SearchResult)
@@ -190,7 +324,8 @@ def search_object(
     Solar-system bodies return their *current* apparent position as seen
     from the resolved observer location. Named stars return their catalog
     RA/Dec (adjusted for the observer's location) along with altitude and
-    azimuth for that same location.
+    azimuth for that same location. Jupiter's and Saturn's major moons
+    return an approximate current position (see :mod:`backend.moons`).
 
     Args:
         name: Case-insensitive object name (e.g. ``"Sirius"``, ``"Mars"``).
@@ -214,6 +349,8 @@ def search_object(
         return _search_solar_system(key, location)
     if key in NAMED_STARS:
         return _search_named_star(key, location)
+    if key in moons.MOONS:
+        return _search_moon(key, location)
     raise HTTPException(
         status_code=status.HTTP_404_NOT_FOUND,
         detail=f"Celestial object '{name}' not found.",

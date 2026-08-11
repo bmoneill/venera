@@ -26,6 +26,8 @@ class CalendarEventOut(BaseModel):
     description: str
     altitude_degrees: Optional[float] = None
     azimuth_degrees: Optional[float] = None
+    cloud_cover_pct: Optional[float] = None
+    weather_description: Optional[str] = None
 
 
 class CalendarResponse(BaseModel):
@@ -92,6 +94,8 @@ def get_calendar(
                 description=event.description,
                 altitude_degrees=event.altitude_degrees,
                 azimuth_degrees=event.azimuth_degrees,
+                cloud_cover_pct=event.cloud_cover_pct,
+                weather_description=event.weather_description,
             )
             for event in events
         ],

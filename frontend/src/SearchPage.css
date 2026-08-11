@@ -62,7 +62,70 @@
     cursor: not-allowed;
 }
 
-/* ── Result card ──────────────────────────────────────────── */
+/* ── Object name combobox ─────────────────────────────── */
+
+.object-field {
+    position: relative;
+    flex: 1;
+    min-width: 12rem;
+}
+
+.object-field .search-input {
+    width: 100%;
+}
+
+.suggestions-list {
+    position: absolute;
+    top: calc(100% + 0.35rem);
+    left: 0;
+    right: 0;
+    z-index: 10;
+    list-style: none;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+    max-height: 16rem;
+    overflow-y: auto;
+}
+
+.suggestion-item {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 0.75rem;
+    padding: 0.6rem 1rem;
+    font-size: 0.9rem;
+    color: var(--text);
+    cursor: pointer;
+    transition: background 0.1s ease;
+}
+
+.suggestion-item:not(:last-child) {
+    border-bottom: 1px solid var(--border);
+}
+
+.suggestion-item:hover,
+.suggestion-item.highlighted {
+    background: var(--bg-cell);
+    color: var(--accent);
+}
+
+.suggestion-type {
+    font-size: 0.72rem;
+    color: var(--text-muted);
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    white-space: nowrap;
+}
+
+.suggestion-item.highlighted .suggestion-type,
+.suggestion-item:hover .suggestion-type {
+    color: inherit;
+    opacity: 0.75;
+}
+
+/* ── Result card ─────────────────────────────────── */
 
 .result-card {
     width: 100%;

@@ -192,6 +192,57 @@ def _clear_view_mask(
     )
 
 
+def _weather_mask(
+    mask: np.ndarray, times: Any, weather_forecast: Optional[HourlyForecast]
+) -> np.ndarray:
+    """Narrow a clear-view mask further by forecast cloud cover, if supplied.
+
+    Args:
+        mask: The existing boolean clear-view mask.
+        times: The Skyfield time array the mask was computed over.
+        weather_forecast: An optional hourly cloud-cover forecast. If
+            ``None``, ``mask`` is returned unchanged.
+
+    Returns:
+        A boolean array, ``True`` where the sample is both in clear view
+        and (when a forecast is available) not overcast.
+    """
+    if weather_forecast is None:
+        return mask
+    cloud_ok = np.array(
+        [
+            _cloud_cover_acceptable(weather_forecast, times[i].utc_datetime())
+            for i in range(len(mask))
+        ]
+    )
+    return mask & cloud_ok
+
+
+def _weather_fields(
+    moment_time: datetime, weather_forecast: Optional[HourlyForecast]
+) -> tuple[Optional[float], Optional[str]]:
+    """Look up the cloud cover and weather description for a moment.
+
+    Args:
+        moment_time: The UTC moment to look up.
+        weather_forecast: An optional hourly cloud-cover forecast. If
+            ``None``, both returned values are ``None``.
+
+    Returns:
+        A tuple of ``(cloud_cover_pct, weather_description)``, both
+        ``None`` if no forecast was supplied or it has no data covering
+        ``moment_time``.
+    """
+    if weather_forecast is None:
+        return None, None
+    cloud_cover_pct = weather_forecast.cloud_cover_at(moment_time)
+    weather_description: Optional[str] = None
+    weather_code = weather_forecast.weather_code_at(moment_time)
+    if weather_code is not None:
+        weather_description = openmeteo.describe_weather_code(weather_code)
+    return cloud_cover_pct, weather_description
+
+
 def find_next_viewing_window(
     name: str,
     location: ResolvedLocation,
@@ -239,15 +290,7 @@ def find_next_viewing_window(
     )
 
     mask = _clear_view_mask(key, alt_deg, sun_alt_deg)
-
-    if weather_forecast is not None:
-        cloud_ok = np.array(
-            [
-                _cloud_cover_acceptable(weather_forecast, times[i].utc_datetime())
-                for i in range(len(mask))
-            ]
-        )
-        mask = mask & cloud_ok
+    mask = _weather_mask(mask, times, weather_forecast)
 
     indices = np.nonzero(mask)[0]
     if indices.size == 0:
@@ -255,13 +298,9 @@ def find_next_viewing_window(
 
     idx = int(indices[0])
     moment_time = times[idx].utc_datetime()
-    cloud_cover_pct: Optional[float] = None
-    weather_description: Optional[str] = None
-    if weather_forecast is not None:
-        cloud_cover_pct = weather_forecast.cloud_cover_at(moment_time)
-        weather_code = weather_forecast.weather_code_at(moment_time)
-        if weather_code is not None:
-            weather_description = openmeteo.describe_weather_code(weather_code)
+    cloud_cover_pct, weather_description = _weather_fields(
+        moment_time, weather_forecast
+    )
 
     return ViewingMoment(
         time=moment_time,
@@ -278,6 +317,7 @@ def find_best_viewing_moment(
     location: ResolvedLocation,
     search_window_days: float = DEFAULT_SEARCH_WINDOW_DAYS,
     step_minutes: float = DEFAULT_STEP_MINUTES,
+    weather_forecast: Optional[HourlyForecast] = None,
 ) -> Optional[ViewingMoment]:
     """Find the single best (highest-altitude) clear-view moment for an object.
 
@@ -288,11 +328,18 @@ def find_best_viewing_moment(
     :mod:`backend.calendar_events`), where the soonest moment is less
     useful than the most favorable one.
 
+    When ``weather_forecast`` is supplied, moments where the forecast
+    cloud cover exceeds :data:`MAX_CLOUD_COVER_FOR_CLEAR_SKY_PERCENT` are
+    excluded from consideration, the same as in
+    :func:`find_next_viewing_window`.
+
     Args:
         name: Case-insensitive object name (e.g. ``"Mars"``, ``"Sirius"``).
         location: The observer's resolved location.
         search_window_days: How many days into the future to search.
         step_minutes: The sampling resolution, in minutes.
+        weather_forecast: An optional hourly cloud-cover forecast for
+            ``location``, used to skip moments with an overcast sky.
 
     Returns:
         The best :class:`ViewingMoment` satisfying the visibility
@@ -309,6 +356,7 @@ def find_best_viewing_moment(
     )
 
     mask = _clear_view_mask(key, alt_deg, sun_alt_deg)
+    mask = _weather_mask(mask, times, weather_forecast)
 
     indices = np.nonzero(mask)[0]
     if indices.size == 0:
@@ -316,10 +364,15 @@ def find_best_viewing_moment(
 
     idx = int(indices[np.argmax(alt_deg[indices])])
     moment_time = times[idx].utc_datetime()
+    cloud_cover_pct, weather_description = _weather_fields(
+        moment_time, weather_forecast
+    )
 
     return ViewingMoment(
         time=moment_time,
         altitude_degrees=round(float(alt_deg[idx]), 2),
         azimuth_degrees=round(float(az_deg[idx]), 2),
         sun_altitude_degrees=round(float(sun_alt_deg[idx]), 2),
+        cloud_cover_pct=cloud_cover_pct,
+        weather_description=weather_description,
     )
