@@ -1,17 +1,19 @@
 import { useState, useEffect, useRef } from 'react'
-import { searchObject, suggestObjects } from './api'
+import { searchObject, suggestObjects, suggestMunicipalities } from './api'
 import './SearchPage.css'
 
 const DEBOUNCE_MS = 200
 const MIN_QUERY_LENGTH = 1
+const MIN_MUNICIPALITY_QUERY_LENGTH = 3
 
 /**
  * SearchPage lets users look up a celestial object by name,
  * from a given observer location (a municipality name or raw lat/long
  * coordinates), and displays its position: right ascension, declination,
- * altitude, azimuth, and distance. The object name field offers
- * text-completion suggestions sourced from the celestial object catalog
- * as the user types.
+ * altitude, azimuth, and distance. Both the object name field and the
+ * coordinates field offer text-completion suggestions -- the former
+ * sourced from the celestial object catalog, the latter from the
+ * municipality gazetteer -- as the user types.
  */
 export default function SearchPage() {
     const [query, setQuery] = useState('')
@@ -19,6 +21,11 @@ export default function SearchPage() {
     const [suggestions, setSuggestions] = useState([])
     const [showSuggestions, setShowSuggestions] = useState(false)
     const [highlightedIndex, setHighlightedIndex] = useState(-1)
+    const [municipalitySuggestions, setMunicipalitySuggestions] = useState([])
+    const [showMunicipalitySuggestions, setShowMunicipalitySuggestions] =
+        useState(false)
+    const [municipalityHighlightedIndex, setMunicipalityHighlightedIndex] =
+        useState(-1)
     const [result, setResult] = useState(null)
     const [loading, setLoading] = useState(false)
     const [error, setError] = useState(null)
@@ -26,6 +33,8 @@ export default function SearchPage() {
 
     const debounceRef = useRef(null)
     const containerRef = useRef(null)
+    const municipalityDebounceRef = useRef(null)
+    const municipalityContainerRef = useRef(null)
 
     useEffect(() => {
         function handleClickOutside(event) {
@@ -34,6 +43,12 @@ export default function SearchPage() {
                 !containerRef.current.contains(event.target)
             ) {
                 setShowSuggestions(false)
+            }
+            if (
+                municipalityContainerRef.current &&
+                !municipalityContainerRef.current.contains(event.target)
+            ) {
+                setShowMunicipalitySuggestions(false)
             }
         }
         document.addEventListener('mousedown', handleClickOutside)
@@ -44,6 +59,8 @@ export default function SearchPage() {
     useEffect(() => {
         return () => {
             if (debounceRef.current) clearTimeout(debounceRef.current)
+            if (municipalityDebounceRef.current)
+                clearTimeout(municipalityDebounceRef.current)
         }
     }, [])
 
@@ -101,6 +118,71 @@ export default function SearchPage() {
         }
     }
 
+    function handleCoordinatesChange(event) {
+        const value = event.target.value
+        setCoordinates(value)
+        setMunicipalityHighlightedIndex(-1)
+
+        if (municipalityDebounceRef.current)
+            clearTimeout(municipalityDebounceRef.current)
+
+        const trimmed = value.trim()
+        if (trimmed.length < MIN_MUNICIPALITY_QUERY_LENGTH) {
+            setMunicipalitySuggestions([])
+            setShowMunicipalitySuggestions(false)
+            return
+        }
+
+        municipalityDebounceRef.current = setTimeout(async () => {
+            try {
+                const matches = await suggestMunicipalities(trimmed)
+                setMunicipalitySuggestions(matches)
+                setShowMunicipalitySuggestions(matches.length > 0)
+            } catch {
+                setMunicipalitySuggestions([])
+                setShowMunicipalitySuggestions(false)
+            }
+        }, DEBOUNCE_MS)
+    }
+
+    function selectMunicipalitySuggestion(suggestion) {
+        setCoordinates(suggestion.label)
+        setMunicipalitySuggestions([])
+        setShowMunicipalitySuggestions(false)
+        setMunicipalityHighlightedIndex(-1)
+    }
+
+    function handleMunicipalityKeyDown(event) {
+        if (
+            !showMunicipalitySuggestions ||
+            municipalitySuggestions.length === 0
+        )
+            return
+
+        if (event.key === 'ArrowDown') {
+            event.preventDefault()
+            setMunicipalityHighlightedIndex(
+                (i) => (i + 1) % municipalitySuggestions.length
+            )
+        } else if (event.key === 'ArrowUp') {
+            event.preventDefault()
+            setMunicipalityHighlightedIndex(
+                (i) =>
+                    (i - 1 + municipalitySuggestions.length) %
+                    municipalitySuggestions.length
+            )
+        } else if (event.key === 'Enter') {
+            if (municipalityHighlightedIndex >= 0) {
+                event.preventDefault()
+                selectMunicipalitySuggestion(
+                    municipalitySuggestions[municipalityHighlightedIndex]
+                )
+            }
+        } else if (event.key === 'Escape') {
+            setShowMunicipalitySuggestions(false)
+        }
+    }
+
     async function handleSearch(e) {
         e.preventDefault()
         const trimmedName = query.trim()
@@ -112,6 +194,7 @@ export default function SearchPage() {
         setResult(null)
         setLastQuery(trimmedName)
         setShowSuggestions(false)
+        setShowMunicipalitySuggestions(false)
 
         try {
             const data = await searchObject(trimmedName, trimmedCoordinates)
@@ -175,15 +258,64 @@ export default function SearchPage() {
                         </ul>
                     )}
                 </div>
-                <input
-                    className="search-input"
-                    type="text"
-                    placeholder="Coordinates — e.g. Paris, France or 48.8566, 2.3522"
-                    value={coordinates}
-                    onChange={(e) => setCoordinates(e.target.value)}
-                    aria-label="Observer coordinates (municipality or lat, long)"
-                    required
-                />
+                <div
+                    className="municipality-field"
+                    ref={municipalityContainerRef}
+                >
+                    <input
+                        className="search-input"
+                        type="text"
+                        placeholder="Coordinates — e.g. Paris, France or 48.8566, 2.3522"
+                        value={coordinates}
+                        onChange={handleCoordinatesChange}
+                        onKeyDown={handleMunicipalityKeyDown}
+                        onFocus={() =>
+                            municipalitySuggestions.length > 0 &&
+                            setShowMunicipalitySuggestions(true)
+                        }
+                        aria-label="Observer coordinates (municipality or lat, long)"
+                        role="combobox"
+                        aria-expanded={showMunicipalitySuggestions}
+                        aria-autocomplete="list"
+                        autoComplete="off"
+                        required
+                    />
+                    {showMunicipalitySuggestions && (
+                        <ul className="suggestions-list" role="listbox">
+                            {municipalitySuggestions.map(
+                                (suggestion, index) => (
+                                    <li
+                                        key={`${suggestion.label}-${index}`}
+                                        role="option"
+                                        aria-selected={
+                                            index ===
+                                            municipalityHighlightedIndex
+                                        }
+                                        className={
+                                            'suggestion-item' +
+                                            (index ===
+                                            municipalityHighlightedIndex
+                                                ? ' highlighted'
+                                                : '')
+                                        }
+                                        onMouseDown={() =>
+                                            selectMunicipalitySuggestion(
+                                                suggestion
+                                            )
+                                        }
+                                        onMouseEnter={() =>
+                                            setMunicipalityHighlightedIndex(
+                                                index
+                                            )
+                                        }
+                                    >
+                                        {suggestion.label}
+                                    </li>
+                                )
+                            )}
+                        </ul>
+                    )}
+                </div>
                 <button
                     className="search-btn"
                     type="submit"

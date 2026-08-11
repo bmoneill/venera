@@ -74,6 +74,18 @@
     width: 100%;
 }
 
+/* ── Municipality combobox ────────────────────────── */
+
+.municipality-field {
+    position: relative;
+    flex: 1;
+    min-width: 12rem;
+}
+
+.municipality-field .search-input {
+    width: 100%;
+}
+
 .suggestions-list {
     position: absolute;
     top: calc(100% + 0.35rem);

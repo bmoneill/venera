@@ -41,6 +41,27 @@ def db_session():
         session.close()
 
 
+@pytest.fixture
+def sql_gazetteer(tmp_path, sample_csv_path):
+    """A SqlMunicipalityGazetteer over a seeded file-backed DB.
+
+    Uses a real temp file (rather than sqlite:///:memory:) since the
+    gazetteer opens a fresh session/connection per query -- an in-memory
+    sqlite database is only shared within a single connection, so a
+    second connection would see an empty database.
+    """
+    db_path = tmp_path / "sql_gazetteer.db"
+    engine = create_engine(f"sqlite:///{db_path}")
+    Base.metadata.create_all(bind=engine)
+    session_factory = sessionmaker(bind=engine)
+    seed_session = session_factory()
+    try:
+        geodata.seed_municipalities_from_csv(seed_session, sample_csv_path)
+    finally:
+        seed_session.close()
+    return geodata.SqlMunicipalityGazetteer(session_factory=session_factory)
+
+
 # ---------------------------------------------------------------------------
 # CSV parsing
 # ---------------------------------------------------------------------------
@@ -211,6 +232,111 @@ class TestMunicipalityGazetteerSuggest:
 
 
 # ---------------------------------------------------------------------------
+# fold_ascii
+# ---------------------------------------------------------------------------
+
+
+class TestFoldAscii:
+    def test_lowercases(self):
+        assert geodata.fold_ascii("PARIS") == "paris"
+
+    def test_strips_latin_diacritics(self):
+        assert geodata.fold_ascii("K\u00f6ln") == "koln"
+        assert geodata.fold_ascii("S\u00e3o Paulo") == "sao paulo"
+
+    def test_plain_ascii_is_unchanged_besides_case(self):
+        assert geodata.fold_ascii("New York") == "new york"
+
+
+# ---------------------------------------------------------------------------
+# SqlMunicipalityGazetteer
+# ---------------------------------------------------------------------------
+
+
+class TestSqlMunicipalityGazetteer:
+    """Tests for :class:`geodata.SqlMunicipalityGazetteer`."""
+
+    def test_find_by_name_only_returns_all_matches(self, sql_gazetteer):
+        assert len(sql_gazetteer.find("paris")) == 2
+
+    def test_find_is_case_insensitive(self, sql_gazetteer):
+        assert len(sql_gazetteer.find("LONDON")) == 1
+
+    def test_find_with_country_narrows_match(self, sql_gazetteer):
+        matches = sql_gazetteer.find("Paris", country="France")
+        assert len(matches) == 1
+        assert matches[0].territory == "Ile-de-France"
+
+    def test_find_with_territory_and_country_narrows_match(self, sql_gazetteer):
+        matches = sql_gazetteer.find(
+            "Paris", territory="Texas", country="United States"
+        )
+        assert len(matches) == 1
+        assert matches[0].country == "United States"
+
+    def test_find_unknown_name_returns_empty(self, sql_gazetteer):
+        assert sql_gazetteer.find("Nowhereville") == []
+
+    def test_len(self, sql_gazetteer):
+        assert len(sql_gazetteer) == 3
+
+    def test_suggest_prefix_match(self, sql_gazetteer):
+        matches = sql_gazetteer.suggest("Par")
+        assert {m.name for m in matches} == {"Paris"}
+        assert len(matches) == 2
+
+    def test_suggest_is_case_insensitive(self, sql_gazetteer):
+        assert len(sql_gazetteer.suggest("lon")) == 1
+
+    def test_suggest_respects_limit(self, sql_gazetteer):
+        assert len(sql_gazetteer.suggest("Par", limit=1)) == 1
+
+    def test_suggest_blank_prefix_returns_empty(self, sql_gazetteer):
+        assert sql_gazetteer.suggest("") == []
+        assert sql_gazetteer.suggest("   ") == []
+
+    def test_suggest_no_match_returns_empty(self, sql_gazetteer):
+        assert sql_gazetteer.suggest("Zzz") == []
+
+    def test_suggest_does_not_match_mid_string(self, sql_gazetteer):
+        assert sql_gazetteer.suggest("aris") == []
+
+    def test_suggest_escapes_like_wildcards(self, sql_gazetteer):
+        assert sql_gazetteer.suggest("Par%") == []
+        assert sql_gazetteer.suggest("Par_") == []
+
+    def test_suggest_orders_by_population_descending(self, tmp_path):
+        """Higher-population matches should be suggested first."""
+        csv_path = tmp_path / "pop.csv"
+        csv_path.write_text(
+            "name,territory,country,latitude,longitude\n"
+            "Springfield,Illinois,United States,39.7817,-89.6501\n"
+            "Springfield,Massachusetts,United States,42.1015,-72.5898\n",
+            encoding="utf-8",
+        )
+        db_path = tmp_path / "pop.db"
+        engine = create_engine(f"sqlite:///{db_path}")
+        Base.metadata.create_all(bind=engine)
+        session_factory = sessionmaker(bind=engine)
+        session = session_factory()
+        try:
+            geodata.seed_municipalities_from_csv(session, csv_path)
+            row = (
+                session.query(MunicipalityRow)
+                .filter(MunicipalityRow.territory == "Massachusetts")
+                .one()
+            )
+            row.population = 1000
+            session.commit()
+        finally:
+            session.close()
+
+        gazetteer = geodata.SqlMunicipalityGazetteer(session_factory=session_factory)
+        matches = gazetteer.suggest("Springfield")
+        assert matches[0].territory == "Massachusetts"
+
+
+# ---------------------------------------------------------------------------
 # Coordinate parsing
 # ---------------------------------------------------------------------------
 
@@ -287,6 +413,44 @@ class TestResolveCoordinates:
 
 
 # ---------------------------------------------------------------------------
+# AmbiguousMunicipalityError
+# ---------------------------------------------------------------------------
+
+
+class TestAmbiguousMunicipalityError:
+    """Tests for :class:`geodata.AmbiguousMunicipalityError`."""
+
+    def _make_municipality(self, index):
+        return geodata.Municipality(
+            name="Springfield",
+            territory=f"Territory{index}",
+            country="United States",
+            latitude=0.0,
+            longitude=0.0,
+        )
+
+    def test_lists_all_matches_when_few(self):
+        matches = [self._make_municipality(i) for i in range(2)]
+        error = geodata.AmbiguousMunicipalityError(matches)
+        assert "Territory0" in str(error)
+        assert "Territory1" in str(error)
+        assert "more" not in str(error)
+
+    def test_truncates_message_when_many_matches(self):
+        matches = [self._make_municipality(i) for i in range(50)]
+        error = geodata.AmbiguousMunicipalityError(matches)
+        message = str(error)
+        assert "Territory0" in message
+        assert "and 40 more" in message
+        assert "Territory49" not in message
+
+    def test_stores_all_matches_regardless_of_truncation(self):
+        matches = [self._make_municipality(i) for i in range(50)]
+        error = geodata.AmbiguousMunicipalityError(matches)
+        assert error.matches == matches
+
+
+# ---------------------------------------------------------------------------
 # Misc helpers
 # ---------------------------------------------------------------------------
 
@@ -300,4 +464,11 @@ def test_get_gazetteer_returns_cached_singleton():
     first = geodata.get_gazetteer()
     second = geodata.get_gazetteer()
     assert first is second
+    geodata.reset_gazetteer_cache()
+
+
+def test_get_gazetteer_returns_sql_backed_instance():
+    geodata.reset_gazetteer_cache()
+    gazetteer = geodata.get_gazetteer()
+    assert isinstance(gazetteer, geodata.SqlMunicipalityGazetteer)
     geodata.reset_gazetteer_cache()

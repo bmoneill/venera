@@ -3,7 +3,7 @@ import { suggestMunicipalities, fetchCalendar } from './api'
 import './CalendarPage.css'
 
 const DEBOUNCE_MS = 200
-const MIN_QUERY_LENGTH = 2
+const MIN_QUERY_LENGTH = 3
 
 const CATEGORY_ICONS = {
     moon_phase: '🌕',
