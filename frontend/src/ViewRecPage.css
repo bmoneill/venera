@@ -18,6 +18,18 @@
     min-width: 12rem;
 }
 
+/* ── Object name combobox ──────────────────────────────────── */
+
+.object-field {
+    position: relative;
+    flex: 1;
+    min-width: 12rem;
+}
+
+.object-field .search-input {
+    width: 100%;
+}
+
 /* ── Municipality combobox ────────────────────────────────── */
 
 .municipality-field {
@@ -46,6 +58,10 @@
 }
 
 .suggestion-item {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 0.75rem;
     padding: 0.6rem 1rem;
     font-size: 0.9rem;
     color: var(--text);
@@ -61,6 +77,20 @@
 .suggestion-item.highlighted {
     background: var(--bg-cell);
     color: var(--accent);
+}
+
+.suggestion-type {
+    font-size: 0.72rem;
+    color: var(--text-muted);
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    white-space: nowrap;
+}
+
+.suggestion-item.highlighted .suggestion-type,
+.suggestion-item:hover .suggestion-type {
+    color: inherit;
+    opacity: 0.75;
 }
 
 /* ── Recommendation message ───────────────────────────────── */

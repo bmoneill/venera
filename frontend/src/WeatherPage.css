@@ -16,3 +16,48 @@
 .weather-form .search-input {
     min-width: 12rem;
 }
+
+/* ── Municipality combobox ────────────────────────────────── */
+
+.municipality-field {
+    position: relative;
+    flex: 1;
+    min-width: 12rem;
+}
+
+.municipality-field .search-input {
+    width: 100%;
+}
+
+.suggestions-list {
+    position: absolute;
+    top: calc(100% + 0.35rem);
+    left: 0;
+    right: 0;
+    z-index: 10;
+    list-style: none;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+    max-height: 16rem;
+    overflow-y: auto;
+}
+
+.suggestion-item {
+    padding: 0.6rem 1rem;
+    font-size: 0.9rem;
+    color: var(--text);
+    cursor: pointer;
+    transition: background 0.1s ease;
+}
+
+.suggestion-item:not(:last-child) {
+    border-bottom: 1px solid var(--border);
+}
+
+.suggestion-item:hover,
+.suggestion-item.highlighted {
+    background: var(--bg-cell);
+    color: var(--accent);
+}

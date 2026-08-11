@@ -1,18 +1,116 @@
-import { useState } from 'react'
-import { fetchWeather } from './api'
+import { useState, useEffect, useRef } from 'react'
+import { suggestMunicipalities, fetchWeather } from './api'
 import './WeatherPage.css'
+
+const DEBOUNCE_MS = 200
+const MIN_MUNICIPALITY_QUERY_LENGTH = 3
 
 /**
  * WeatherPage lets users look up current weather conditions
  * (via Open-Meteo) for an observer location — a municipality name or raw
  * lat/long coordinates — to help judge whether the sky will be clear
- * enough for stargazing.
+ * enough for stargazing. The municipality field offers text-completion
+ * suggestions sourced from the municipality gazetteer as the user types.
  */
 export default function WeatherPage() {
     const [coordinates, setCoordinates] = useState('')
+    const [municipalitySuggestions, setMunicipalitySuggestions] = useState([])
+    const [showMunicipalitySuggestions, setShowMunicipalitySuggestions] =
+        useState(false)
+    const [municipalityHighlightedIndex, setMunicipalityHighlightedIndex] =
+        useState(-1)
     const [result, setResult] = useState(null)
     const [loading, setLoading] = useState(false)
     const [error, setError] = useState(null)
+
+    const municipalityDebounceRef = useRef(null)
+    const municipalityContainerRef = useRef(null)
+
+    useEffect(() => {
+        function handleClickOutside(event) {
+            if (
+                municipalityContainerRef.current &&
+                !municipalityContainerRef.current.contains(event.target)
+            ) {
+                setShowMunicipalitySuggestions(false)
+            }
+        }
+        document.addEventListener('mousedown', handleClickOutside)
+        return () =>
+            document.removeEventListener('mousedown', handleClickOutside)
+    }, [])
+
+    useEffect(() => {
+        return () => {
+            if (municipalityDebounceRef.current)
+                clearTimeout(municipalityDebounceRef.current)
+        }
+    }, [])
+
+    function handleCoordinatesChange(event) {
+        const value = event.target.value
+        setCoordinates(value)
+        setMunicipalityHighlightedIndex(-1)
+
+        if (municipalityDebounceRef.current)
+            clearTimeout(municipalityDebounceRef.current)
+
+        const trimmed = value.trim()
+        if (trimmed.length < MIN_MUNICIPALITY_QUERY_LENGTH) {
+            setMunicipalitySuggestions([])
+            setShowMunicipalitySuggestions(false)
+            return
+        }
+
+        municipalityDebounceRef.current = setTimeout(async () => {
+            try {
+                const matches = await suggestMunicipalities(trimmed)
+                setMunicipalitySuggestions(matches)
+                setShowMunicipalitySuggestions(matches.length > 0)
+            } catch {
+                setMunicipalitySuggestions([])
+                setShowMunicipalitySuggestions(false)
+            }
+        }, DEBOUNCE_MS)
+    }
+
+    function selectMunicipalitySuggestion(suggestion) {
+        setCoordinates(suggestion.label)
+        setMunicipalitySuggestions([])
+        setShowMunicipalitySuggestions(false)
+        setMunicipalityHighlightedIndex(-1)
+    }
+
+    function handleMunicipalityKeyDown(event) {
+        if (
+            !showMunicipalitySuggestions ||
+            municipalitySuggestions.length === 0
+        )
+            return
+
+        if (event.key === 'ArrowDown') {
+            event.preventDefault()
+            setMunicipalityHighlightedIndex(
+                (i) => (i + 1) % municipalitySuggestions.length
+            )
+        } else if (event.key === 'ArrowUp') {
+            event.preventDefault()
+            setMunicipalityHighlightedIndex(
+                (i) =>
+                    (i - 1 + municipalitySuggestions.length) %
+                    municipalitySuggestions.length
+            )
+        } else if (event.key === 'Enter') {
+            if (municipalityHighlightedIndex >= 0) {
+                event.preventDefault()
+                selectMunicipalitySuggestion(
+                    municipalitySuggestions[municipalityHighlightedIndex]
+                )
+            }
+        } else if (event.key === 'Escape') {
+            setShowMunicipalitySuggestions(false)
+        }
+    }
 
     async function handleSubmit(event) {
         event.preventDefault()
@@ -22,6 +120,7 @@ export default function WeatherPage() {
         setLoading(true)
         setError(null)
         setResult(null)
+        setShowMunicipalitySuggestions(false)
 
         try {
             const data = await fetchWeather(trimmedCoordinates)
@@ -36,16 +135,65 @@ export default function WeatherPage() {
     return (
         <div className="weather-container">
             <form className="weather-form" onSubmit={handleSubmit}>
-                <input
-                    className="search-input"
-                    type="text"
-                    placeholder="Coordinates — e.g. Paris, France or 48.8566, 2.3522"
-                    value={coordinates}
-                    onChange={(e) => setCoordinates(e.target.value)}
-                    aria-label="Observer coordinates (municipality or lat, long)"
-                    autoFocus
-                    required
-                />
+                <div
+                    className="municipality-field"
+                    ref={municipalityContainerRef}
+                >
+                    <input
+                        className="search-input"
+                        type="text"
+                        placeholder="Coordinates — e.g. Paris, France or 48.8566, 2.3522"
+                        value={coordinates}
+                        onChange={handleCoordinatesChange}
+                        onKeyDown={handleMunicipalityKeyDown}
+                        onFocus={() =>
+                            municipalitySuggestions.length > 0 &&
+                            setShowMunicipalitySuggestions(true)
+                        }
+                        aria-label="Observer coordinates (municipality or lat, long)"
+                        role="combobox"
+                        aria-expanded={showMunicipalitySuggestions}
+                        aria-autocomplete="list"
+                        autoComplete="off"
+                        autoFocus
+                        required
+                    />
+                    {showMunicipalitySuggestions && (
+                        <ul className="suggestions-list" role="listbox">
+                            {municipalitySuggestions.map(
+                                (suggestion, index) => (
+                                    <li
+                                        key={`${suggestion.label}-${index}`}
+                                        role="option"
+                                        aria-selected={
+                                            index ===
+                                            municipalityHighlightedIndex
+                                        }
+                                        className={
+                                            'suggestion-item' +
+                                            (index ===
+                                            municipalityHighlightedIndex
+                                                ? ' highlighted'
+                                                : '')
+                                        }
+                                        onMouseDown={() =>
+                                            selectMunicipalitySuggestion(
+                                                suggestion
+                                            )
+                                        }
+                                        onMouseEnter={() =>
+                                            setMunicipalityHighlightedIndex(
+                                                index
+                                            )
+                                        }
+                                    >
+                                        {suggestion.label}
+                                    </li>
+                                )
+                            )}
+                        </ul>
+                    )}
+                </div>
                 <button
                     className="search-btn"
                     type="submit"

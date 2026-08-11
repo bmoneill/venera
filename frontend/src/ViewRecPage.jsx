@@ -1,28 +1,41 @@
 import { useState, useEffect, useRef } from 'react'
-import { suggestMunicipalities, fetchViewingRecommendation } from './api'
+import {
+    suggestObjects,
+    suggestMunicipalities,
+    fetchViewingRecommendation,
+} from './api'
 import './ViewRecPage.css'
 
 const DEBOUNCE_MS = 200
-const MIN_QUERY_LENGTH = 3
+const MIN_QUERY_LENGTH = 1
+const MIN_MUNICIPALITY_QUERY_LENGTH = 3
 
 /**
  * ViewRecPage lets users find the soonest time a celestial
- * object will be in clear view from their municipality. The municipality
- * field offers text-completion suggestions sourced from the municipality
- * gazetteer as the user types.
+ * object will be in clear view from their municipality. Both the object
+ * name field and the municipality field offer text-completion
+ * suggestions -- the former sourced from the celestial object catalog,
+ * the latter from the municipality gazetteer -- as the user types.
  */
 export default function ViewRecPage() {
     const [objectName, setObjectName] = useState('')
-    const [municipalityQuery, setMunicipalityQuery] = useState('')
     const [suggestions, setSuggestions] = useState([])
     const [showSuggestions, setShowSuggestions] = useState(false)
     const [highlightedIndex, setHighlightedIndex] = useState(-1)
+    const [municipalityQuery, setMunicipalityQuery] = useState('')
+    const [municipalitySuggestions, setMunicipalitySuggestions] = useState([])
+    const [showMunicipalitySuggestions, setShowMunicipalitySuggestions] =
+        useState(false)
+    const [municipalityHighlightedIndex, setMunicipalityHighlightedIndex] =
+        useState(-1)
     const [result, setResult] = useState(null)
     const [loading, setLoading] = useState(false)
     const [error, setError] = useState(null)
 
     const debounceRef = useRef(null)
     const containerRef = useRef(null)
+    const municipalityDebounceRef = useRef(null)
+    const municipalityContainerRef = useRef(null)
 
     useEffect(() => {
         function handleClickOutside(event) {
@@ -31,6 +44,12 @@ export default function ViewRecPage() {
                 !containerRef.current.contains(event.target)
             ) {
                 setShowSuggestions(false)
+            }
+            if (
+                municipalityContainerRef.current &&
+                !municipalityContainerRef.current.contains(event.target)
+            ) {
+                setShowMunicipalitySuggestions(false)
             }
         }
         document.addEventListener('mousedown', handleClickOutside)
@@ -41,12 +60,14 @@ export default function ViewRecPage() {
     useEffect(() => {
         return () => {
             if (debounceRef.current) clearTimeout(debounceRef.current)
+            if (municipalityDebounceRef.current)
+                clearTimeout(municipalityDebounceRef.current)
         }
     }, [])
 
-    function handleMunicipalityChange(event) {
+    function handleObjectNameChange(event) {
         const value = event.target.value
-        setMunicipalityQuery(value)
+        setObjectName(value)
         setHighlightedIndex(-1)
 
         if (debounceRef.current) clearTimeout(debounceRef.current)
@@ -60,7 +81,7 @@ export default function ViewRecPage() {
 
         debounceRef.current = setTimeout(async () => {
             try {
-                const matches = await suggestMunicipalities(trimmed)
+                const matches = await suggestObjects(trimmed)
                 setSuggestions(matches)
                 setShowSuggestions(matches.length > 0)
             } catch {
@@ -71,7 +92,7 @@ export default function ViewRecPage() {
     }
 
     function selectSuggestion(suggestion) {
-        setMunicipalityQuery(suggestion.label)
+        setObjectName(suggestion.name)
         setSuggestions([])
         setShowSuggestions(false)
         setHighlightedIndex(-1)
@@ -98,6 +119,71 @@ export default function ViewRecPage() {
         }
     }
 
+    function handleMunicipalityChange(event) {
+        const value = event.target.value
+        setMunicipalityQuery(value)
+        setMunicipalityHighlightedIndex(-1)
+
+        if (municipalityDebounceRef.current)
+            clearTimeout(municipalityDebounceRef.current)
+
+        const trimmed = value.trim()
+        if (trimmed.length < MIN_MUNICIPALITY_QUERY_LENGTH) {
+            setMunicipalitySuggestions([])
+            setShowMunicipalitySuggestions(false)
+            return
+        }
+
+        municipalityDebounceRef.current = setTimeout(async () => {
+            try {
+                const matches = await suggestMunicipalities(trimmed)
+                setMunicipalitySuggestions(matches)
+                setShowMunicipalitySuggestions(matches.length > 0)
+            } catch {
+                setMunicipalitySuggestions([])
+                setShowMunicipalitySuggestions(false)
+            }
+        }, DEBOUNCE_MS)
+    }
+
+    function selectMunicipalitySuggestion(suggestion) {
+        setMunicipalityQuery(suggestion.label)
+        setMunicipalitySuggestions([])
+        setShowMunicipalitySuggestions(false)
+        setMunicipalityHighlightedIndex(-1)
+    }
+
+    function handleMunicipalityKeyDown(event) {
+        if (
+            !showMunicipalitySuggestions ||
+            municipalitySuggestions.length === 0
+        )
+            return
+
+        if (event.key === 'ArrowDown') {
+            event.preventDefault()
+            setMunicipalityHighlightedIndex(
+                (i) => (i + 1) % municipalitySuggestions.length
+            )
+        } else if (event.key === 'ArrowUp') {
+            event.preventDefault()
+            setMunicipalityHighlightedIndex(
+                (i) =>
+                    (i - 1 + municipalitySuggestions.length) %
+                    municipalitySuggestions.length
+            )
+        } else if (event.key === 'Enter') {
+            if (municipalityHighlightedIndex >= 0) {
+                event.preventDefault()
+                selectMunicipalitySuggestion(
+                    municipalitySuggestions[municipalityHighlightedIndex]
+                )
+            }
+        } else if (event.key === 'Escape') {
+            setShowMunicipalitySuggestions(false)
+        }
+    }
+
     async function handleSubmit(event) {
         event.preventDefault()
         const trimmedName = objectName.trim()
@@ -108,6 +194,7 @@ export default function ViewRecPage() {
         setError(null)
         setResult(null)
         setShowSuggestions(false)
+        setShowMunicipalitySuggestions(false)
 
         try {
             const data = await fetchViewingRecommendation(
@@ -125,38 +212,29 @@ export default function ViewRecPage() {
     return (
         <div className="viewrec-container">
             <form className="viewrec-form" onSubmit={handleSubmit}>
-                <input
-                    className="search-input"
-                    type="text"
-                    placeholder="e.g. Mars, Sirius, Moon…"
-                    value={objectName}
-                    onChange={(e) => setObjectName(e.target.value)}
-                    aria-label="Celestial object name"
-                    autoFocus
-                />
-
-                <div className="municipality-field" ref={containerRef}>
+                <div className="object-field" ref={containerRef}>
                     <input
                         className="search-input"
                         type="text"
-                        placeholder="Your municipality — e.g. Paris, France"
-                        value={municipalityQuery}
-                        onChange={handleMunicipalityChange}
+                        placeholder="e.g. Mars, Sirius, Moon…"
+                        value={objectName}
+                        onChange={handleObjectNameChange}
                         onKeyDown={handleKeyDown}
                         onFocus={() =>
                             suggestions.length > 0 && setShowSuggestions(true)
                         }
-                        aria-label="Municipality"
+                        aria-label="Celestial object name"
                         role="combobox"
                         aria-expanded={showSuggestions}
                         aria-autocomplete="list"
                         autoComplete="off"
+                        autoFocus
                     />
                     {showSuggestions && (
                         <ul className="suggestions-list" role="listbox">
                             {suggestions.map((suggestion, index) => (
                                 <li
-                                    key={`${suggestion.label}-${index}`}
+                                    key={`${suggestion.name}-${index}`}
                                     role="option"
                                     aria-selected={index === highlightedIndex}
                                     className={
@@ -172,9 +250,72 @@ export default function ViewRecPage() {
                                         setHighlightedIndex(index)
                                     }
                                 >
-                                    {suggestion.label}
+                                    <span className="suggestion-name">
+                                        {suggestion.name}
+                                    </span>
+                                    <span className="suggestion-type">
+                                        {suggestion.type}
+                                    </span>
                                 </li>
                             ))}
+                        </ul>
+                    )}
+                </div>
+
+                <div
+                    className="municipality-field"
+                    ref={municipalityContainerRef}
+                >
+                    <input
+                        className="search-input"
+                        type="text"
+                        placeholder="Your municipality — e.g. Paris, France"
+                        value={municipalityQuery}
+                        onChange={handleMunicipalityChange}
+                        onKeyDown={handleMunicipalityKeyDown}
+                        onFocus={() =>
+                            municipalitySuggestions.length > 0 &&
+                            setShowMunicipalitySuggestions(true)
+                        }
+                        aria-label="Municipality"
+                        role="combobox"
+                        aria-expanded={showMunicipalitySuggestions}
+                        aria-autocomplete="list"
+                        autoComplete="off"
+                    />
+                    {showMunicipalitySuggestions && (
+                        <ul className="suggestions-list" role="listbox">
+                            {municipalitySuggestions.map(
+                                (suggestion, index) => (
+                                    <li
+                                        key={`${suggestion.label}-${index}`}
+                                        role="option"
+                                        aria-selected={
+                                            index ===
+                                            municipalityHighlightedIndex
+                                        }
+                                        className={
+                                            'suggestion-item' +
+                                            (index ===
+                                            municipalityHighlightedIndex
+                                                ? ' highlighted'
+                                                : '')
+                                        }
+                                        onMouseDown={() =>
+                                            selectMunicipalitySuggestion(
+                                                suggestion
+                                            )
+                                        }
+                                        onMouseEnter={() =>
+                                            setMunicipalityHighlightedIndex(
+                                                index
+                                            )
+                                        }
+                                    >
+                                        {suggestion.label}
+                                    </li>
+                                )
+                            )}
                         </ul>
                     )}
                 </div>
