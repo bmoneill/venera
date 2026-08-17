@@ -28,7 +28,7 @@ Venera is written using a FastAPI backend and a React frontend. The backend is
 responsible for fetching and processing astronomical and weather data, utilizing
 [skyfield](https://rhodesmill.org/skyfield/) (with NASA JPL ephemerides) for
 celestial object and event data, and [Open-Meteo](https://open-meteo.com/)
-for weather data (TODO).
+for weather data.
 
 ## Features
 
