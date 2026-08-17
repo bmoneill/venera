@@ -42,6 +42,14 @@ for weather data.
 
 ## Building / Deploying
 
+Venera utilizes the following external data sources:
+
+- [NASA JPL Ephemerides](https://ssd.jpl.nasa.gov/tools/ephemeris.html) for
+  celestial object and event data (automatically fetched and used by skyfield).
+- [GeoNames](https://www.geonames.org/) for location data. allCountries.zip and
+  admin1CodesASCII.txt should be downloaded, unzipped, and imported into the
+  database using the provided `import_geonames.py` script.
+
 ```shell
 docker compose up --build
 ```
