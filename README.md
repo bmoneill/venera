@@ -8,6 +8,8 @@
     </a>
     <a href="https://github.com/bmoneill/venera/actions/workflows/pytest.yml">
     <img alt="Pytest Status" src="https://github.com/bmoneill/venera/actions/workflows/pytest.yml/badge.svg?branch=main" />
+    <a href="https://github.com/bmoneill/venera/actions/workflows/eslint.yml">
+    <img alt="ESLint status" src="https://github.com/bmoneill/venera/actions/workflows/eslint.yml/badge.svg?branch=main" />
     </a>
 </div>
 
