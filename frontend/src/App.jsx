@@ -1,7 +1,8 @@
-import { Routes, Route, NavLink } from 'react-router-dom'
+import { Routes, Route, NavLink, Link } from 'react-router-dom'
 import './App.css'
 import CalendarPage from './CalendarPage'
 import MoonPage from './MoonPage'
+import PrivacyPage from './PrivacyPage'
 import SearchPage from './SearchPage'
 import ViewRecPage from './ViewRecPage'
 import WeatherPage from './WeatherPage'
@@ -66,11 +67,15 @@ export default function App() {
                     <Route path="/viewrec" element={<ViewRecPage />} />
                     <Route path="/weather" element={<WeatherPage />} />
                     <Route path="/calendar" element={<CalendarPage />} />
+                    <Route path="/privacy" element={<PrivacyPage />} />
                 </Routes>
             </main>
 
             <footer className="app-footer">
                 <p>Venera &mdash; the sky, quantified</p>
+                <p className="footer-links">
+                    <Link to="/privacy">Privacy Policy</Link>
+                </p>
             </footer>
         </div>
     )

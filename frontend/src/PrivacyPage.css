@@ -1,0 +1,126 @@
+/* ── Privacy policy page ──────────────────────────────────── */
+.policy-card {
+    width: 100%;
+    max-width: 46rem;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+    box-shadow: 0 8px 40px rgba(0, 0, 0, 0.5);
+}
+
+.policy-header {
+    display: flex;
+    align-items: center;
+    gap: 1.2rem;
+    padding: 1.5rem 1.75rem;
+    border-bottom: 1px solid var(--border);
+    background: linear-gradient(135deg, #14143a 0%, #0e0e26 100%);
+}
+
+.policy-icon {
+    font-size: 2.4rem;
+    line-height: 1;
+    filter: drop-shadow(0 0 10px rgba(240, 192, 64, 0.5));
+}
+
+.policy-title {
+    font-size: 1.4rem;
+    font-weight: 600;
+    color: var(--accent);
+    letter-spacing: 0.06em;
+}
+
+.policy-effective-date {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    margin-top: 0.2rem;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+}
+
+.policy-body {
+    padding: 1.75rem 2rem 2.25rem;
+}
+
+.policy-body > p {
+    color: var(--text);
+    line-height: 1.7;
+    margin-bottom: 1rem;
+}
+
+.policy-section {
+    margin-top: 2rem;
+}
+
+.policy-section:first-of-type {
+    margin-top: 1.5rem;
+}
+
+.policy-section h3 {
+    font-size: 1.05rem;
+    font-weight: 600;
+    color: var(--accent);
+    letter-spacing: 0.03em;
+    margin-bottom: 0.85rem;
+    padding-bottom: 0.5rem;
+    border-bottom: 1px solid var(--border);
+}
+
+.policy-section h4 {
+    font-size: 0.88rem;
+    font-weight: 600;
+    color: var(--accent-dim);
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    margin-top: 1.25rem;
+    margin-bottom: 0.6rem;
+}
+
+.policy-section p {
+    color: var(--text);
+    line-height: 1.7;
+    margin-bottom: 0.85rem;
+}
+
+.policy-section ul {
+    margin: 0 0 0.85rem;
+    padding-left: 1.4rem;
+    color: var(--text);
+    line-height: 1.7;
+}
+
+.policy-section li {
+    margin-bottom: 0.35rem;
+}
+
+.policy-section li:last-child {
+    margin-bottom: 0;
+}
+
+.policy-section strong {
+    color: var(--text);
+    font-weight: 600;
+}
+
+.policy-body a {
+    color: var(--accent);
+    text-decoration: none;
+    border-bottom: 1px solid transparent;
+    transition: border-color 0.15s ease;
+}
+
+.policy-body a:hover {
+    border-bottom-color: var(--accent);
+}
+
+/* ── Responsive ───────────────────────────────────────────── */
+@media (max-width: 480px) {
+    .policy-header {
+        padding: 1.2rem;
+    }
+
+    .policy-body {
+        padding: 1.25rem 1.2rem 1.75rem;
+    }
+}
