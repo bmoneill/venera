@@ -345,16 +345,25 @@ export default function SearchPage() {
             )}
 
             {result && !loading && !error && (
-                <div className="result-card">
+                <div
+                    className={
+                        'result-card' + (result.visible ? '' : ' not-visible')
+                    }
+                >
                     <div className="result-header">
                         <span className="result-icon" aria-hidden="true">
-                            ✦
+                            {result.visible ? '✦' : '✖'}
                         </span>
                         <div>
                             <h2 className="result-name">{result.name}</h2>
                             <p className="result-type">{result.type}</p>
                             <p className="result-location">
                                 Observed from {result.location}
+                            </p>
+                            <p className="visibility-message">
+                                {result.visible
+                                    ? 'Visible now'
+                                    : 'Not currently visible'}
                             </p>
                         </div>
                     </div>
@@ -411,6 +420,54 @@ export default function SearchPage() {
                                 <span className="data-unit">km</span>
                             </span>
                         </div>
+                        <div className="data-cell">
+                            <span className="data-icon" aria-hidden="true">
+                                ✶
+                            </span>
+                            <span className="data-label">
+                                Apparent Magnitude
+                            </span>
+                            <span className="data-value">
+                                {result.apparent_magnitude.toFixed(2)}
+                            </span>
+                        </div>
+                        <div className="data-cell">
+                            <span className="data-icon" aria-hidden="true">
+                                ☀
+                            </span>
+                            <span className="data-label">Sun Altitude</span>
+                            <span className="data-value">
+                                {result.sun_altitude_degrees.toFixed(2)}
+                                <span className="data-unit">°</span>
+                            </span>
+                        </div>
+                        {result.cloud_cover_pct != null && (
+                            <div className="data-cell">
+                                <span className="data-icon" aria-hidden="true">
+                                    ☁
+                                </span>
+                                <span className="data-label">Cloud Cover</span>
+                                <span className="data-value">
+                                    {result.cloud_cover_pct.toFixed(0)}
+                                    <span className="data-unit">%</span>
+                                </span>
+                            </div>
+                        )}
+                        {result.moon_direction != null && (
+                            <div className="data-cell">
+                                <span className="data-icon" aria-hidden="true">
+                                    ☽
+                                </span>
+                                <span className="data-label">
+                                    Relative to the Moon
+                                </span>
+                                <span className="data-value">
+                                    {result.moon_separation_degrees.toFixed(1)}
+                                    <span className="data-unit">°</span>{' '}
+                                    {result.moon_direction}
+                                </span>
+                            </div>
+                        )}
                     </div>
                 </div>
             )}

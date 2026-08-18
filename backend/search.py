@@ -3,15 +3,35 @@ position (RA/Dec, altitude/azimuth, and distance) as seen from a
 user-supplied observer location.
 """
 
-from typing import cast
+from typing import Optional, cast
 
 from fastapi import APIRouter, HTTPException, Query, status
 from pydantic import BaseModel
 from skyfield.api import Star, wgs84
 
-from . import astronomy, geodata, moons
+from . import astronomy, compass, geodata, magnitudes, moons, openmeteo
 from .geodata import ResolvedLocation
 from .location import resolve_location
+
+# ---------------------------------------------------------------------------
+# "Is it visible right now?" thresholds
+# ---------------------------------------------------------------------------
+
+#: Minimum altitude (degrees) above the horizon for an object to be
+#: considered currently visible.
+MIN_VISIBLE_ALTITUDE_DEGREES: float = 10.0
+
+#: Sun altitude (degrees) at or below which the sky is considered dark
+#: enough for naked-eye viewing (roughly civil twilight).
+MAX_SUN_ALTITUDE_FOR_VISIBILITY_DEGREES: float = -6.0
+
+#: Maximum current cloud cover (percentage) for the sky to be
+#: considered clear enough for naked-eye viewing.
+CLOUD_COVER_VISIBILITY_THRESHOLD_PERCENT: float = 50.0
+
+#: Faintest apparent magnitude generally visible to the naked eye under
+#: a clear, dark sky away from significant light pollution.
+NAKED_EYE_LIMITING_MAGNITUDE: float = 6.0
 
 # ---------------------------------------------------------------------------
 # Solar-system bodies available in de421.bsp, keyed by lowercase display name.
@@ -132,6 +152,12 @@ class SearchResult(BaseModel):
     azimuth_degrees: float
     distance_km: float
     location: str
+    apparent_magnitude: float
+    sun_altitude_degrees: float
+    cloud_cover_pct: Optional[float] = None
+    visible: bool
+    moon_separation_degrees: Optional[float] = None
+    moon_direction: Optional[str] = None
 
 
 class ObjectSuggestion(BaseModel):
@@ -144,6 +170,131 @@ class ObjectSuggestion(BaseModel):
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
+
+
+def _current_cloud_cover_pct(location: ResolvedLocation) -> Optional[float]:
+    """Best-effort fetch of the current cloud cover percentage for a location.
+
+    Mirrors the best-effort pattern used elsewhere for weather
+    integration (e.g. :func:`backend.viewrec._fetch_weather_forecast`):
+    failures talking to the Open-Meteo API are swallowed here rather
+    than propagated, so a visibility check still degrades gracefully
+    without cloud data.
+
+    Args:
+        location: The observer's resolved location.
+
+    Returns:
+        The current cloud cover percentage, or ``None`` if it could not
+        be retrieved.
+    """
+    try:
+        return openmeteo.fetch_current_weather(
+            location.latitude, location.longitude
+        ).cloud_cover_pct
+    except openmeteo.WeatherServiceError:
+        return None
+
+
+def _sun_altitude_degrees(observer, t) -> float:
+    """Compute the Sun's current altitude for an observer.
+
+    Args:
+        observer: A Skyfield topocentric observer (Earth plus a
+            ``wgs84.latlon`` offset).
+        t: The Skyfield time at which to compute the Sun's position.
+
+    Returns:
+        The Sun's altitude above the horizon, in degrees.
+    """
+    sun_apparent = observer.at(t).observe(astronomy.eph["sun"]).apparent()
+    sun_alt, _sun_az, _sun_distance = sun_apparent.altaz()
+    return round(cast(float, sun_alt.degrees), 2)
+
+
+def _moon_radec(observer, t) -> tuple[float, float]:
+    """Compute the Moon's current Right Ascension and Declination.
+
+    Args:
+        observer: A Skyfield topocentric observer (Earth plus a
+            ``wgs84.latlon`` offset).
+        t: The Skyfield time at which to compute the Moon's position.
+
+    Returns:
+        A tuple of ``(ra_hours, dec_degrees)`` for the Moon's apparent
+        position as seen by ``observer``.
+    """
+    moon_apparent = observer.at(t).observe(astronomy.eph["moon"]).apparent()
+    moon_ra, moon_dec, _moon_distance = moon_apparent.radec()
+    return cast(float, moon_ra.hours), cast(float, moon_dec.degrees)
+
+
+def _moon_relative_position(
+    observer, t, ra_hours: float, dec_degrees: float
+) -> tuple[float, str]:
+    """Describe an object's position relative to the Moon.
+
+    Args:
+        observer: A Skyfield topocentric observer (Earth plus a
+            ``wgs84.latlon`` offset).
+        t: The Skyfield time at which to compute the Moon's position.
+        ra_hours: The object's Right Ascension, in hours.
+        dec_degrees: The object's Declination, in degrees.
+
+    Returns:
+        A tuple of ``(separation_degrees, direction)``, where
+        ``direction`` is one of the eight compass points (e.g.
+        ``"NE"``) describing which way the object lies from the Moon.
+    """
+    moon_ra_hours, moon_dec_degrees = _moon_radec(observer, t)
+    separation_degrees = round(
+        compass.angular_separation_degrees(
+            moon_ra_hours, moon_dec_degrees, ra_hours, dec_degrees
+        ),
+        2,
+    )
+    bearing = compass.bearing_degrees(
+        moon_ra_hours, moon_dec_degrees, ra_hours, dec_degrees
+    )
+    return separation_degrees, compass.compass_direction(bearing)
+
+
+def _is_currently_visible(
+    object_altitude_degrees: float,
+    sun_altitude_degrees: float,
+    cloud_cover_pct: Optional[float],
+    apparent_magnitude: float,
+) -> bool:
+    """Decide whether an object is visible right now, in plain terms.
+
+    An object counts as visible when it is comfortably above the
+    horizon, the sky is dark enough, the sky is clear enough (when
+    cloud-cover data is available), and the object itself is bright
+    enough for the naked eye. Sample times with no cloud-cover data
+    (see :func:`_current_cloud_cover_pct`) are treated as acceptable on
+    that count, since there's simply no data to judge them by.
+
+    Args:
+        object_altitude_degrees: The object's altitude above the
+            horizon, in degrees.
+        sun_altitude_degrees: The Sun's current altitude, in degrees.
+        cloud_cover_pct: The current cloud cover percentage, or
+            ``None`` if unavailable.
+        apparent_magnitude: The object's current apparent magnitude.
+
+    Returns:
+        ``True`` if the object satisfies every visibility condition.
+    """
+    cloud_cover_ok = (
+        cloud_cover_pct is None
+        or cloud_cover_pct < CLOUD_COVER_VISIBILITY_THRESHOLD_PERCENT
+    )
+    return (
+        object_altitude_degrees >= MIN_VISIBLE_ALTITUDE_DEGREES
+        and sun_altitude_degrees <= MAX_SUN_ALTITUDE_FOR_VISIBILITY_DEGREES
+        and cloud_cover_ok
+        and apparent_magnitude <= NAKED_EYE_LIMITING_MAGNITUDE
+    )
 
 
 def _search_solar_system(key: str, location: ResolvedLocation) -> SearchResult:
@@ -168,15 +319,55 @@ def _search_solar_system(key: str, location: ResolvedLocation) -> SearchResult:
     apparent = observer.at(t).observe(target).apparent()
     ra, dec, distance = apparent.radec()
     alt, az, _ = apparent.altaz()
+
+    ra_hours = cast(float, ra.hours)
+    dec_degrees = cast(float, dec.degrees)
+    altitude_degrees = round(cast(float, alt.degrees), 2)
+
+    moon_separation_degrees: Optional[float] = None
+    moon_direction: Optional[str] = None
+
+    if key == "sun":
+        # The Sun's own altitude *is* the relevant "sun altitude", and
+        # its position relative to the Moon isn't meaningful to report.
+        sun_altitude_degrees = altitude_degrees
+        apparent_magnitude = magnitudes.sun_magnitude(cast(float, distance.au))
+    elif key == "moon":
+        sun_altitude_degrees = _sun_altitude_degrees(observer, t)
+        phase_angle_degrees = cast(
+            float, apparent.phase_angle(astronomy.eph["sun"]).degrees
+        )
+        apparent_magnitude = magnitudes.moon_magnitude(phase_angle_degrees)
+    else:
+        sun_altitude_degrees = _sun_altitude_degrees(observer, t)
+        apparent_magnitude = magnitudes.planet_magnitude(apparent)
+        if apparent_magnitude is None:
+            apparent_magnitude = magnitudes.STATIC_MAGNITUDES.get(key, 0.0)
+        moon_separation_degrees, moon_direction = _moon_relative_position(
+            observer, t, ra_hours, dec_degrees
+        )
+
+    apparent_magnitude = round(apparent_magnitude, 2)
+    cloud_cover_pct = _current_cloud_cover_pct(location)
+    visible = _is_currently_visible(
+        altitude_degrees, sun_altitude_degrees, cloud_cover_pct, apparent_magnitude
+    )
+
     return SearchResult(
         name=key.capitalize(),
         type=body_type,
-        ra_hours=round(cast(float, ra.hours), 4),
-        dec_degrees=round(cast(float, dec.degrees), 4),
-        altitude_degrees=round(cast(float, alt.degrees), 2),
+        ra_hours=round(ra_hours, 4),
+        dec_degrees=round(dec_degrees, 4),
+        altitude_degrees=altitude_degrees,
         azimuth_degrees=round(cast(float, az.degrees), 2),
         distance_km=round(cast(float, distance.km), 0),
         location=location.label,
+        apparent_magnitude=apparent_magnitude,
+        sun_altitude_degrees=sun_altitude_degrees,
+        cloud_cover_pct=cloud_cover_pct,
+        visible=visible,
+        moon_separation_degrees=moon_separation_degrees,
+        moon_direction=moon_direction,
     )
 
 
@@ -202,15 +393,37 @@ def _search_named_star(key: str, location: ResolvedLocation) -> SearchResult:
     apparent = observer.at(t).observe(star).apparent()
     ra, dec, _ = apparent.radec()
     alt, az, _ = apparent.altaz()
+
+    ra_hours_result = cast(float, ra.hours)
+    dec_degrees_result = cast(float, dec.degrees)
+    altitude_degrees = round(cast(float, alt.degrees), 2)
+    sun_altitude_degrees = _sun_altitude_degrees(observer, t)
+    apparent_magnitude = round(
+        magnitudes.NAMED_STAR_MAGNITUDES.get(key, NAKED_EYE_LIMITING_MAGNITUDE), 2
+    )
+    cloud_cover_pct = _current_cloud_cover_pct(location)
+    visible = _is_currently_visible(
+        altitude_degrees, sun_altitude_degrees, cloud_cover_pct, apparent_magnitude
+    )
+    moon_separation_degrees, moon_direction = _moon_relative_position(
+        observer, t, ra_hours_result, dec_degrees_result
+    )
+
     return SearchResult(
         name=key.title(),
         type="Star",
-        ra_hours=round(cast(float, ra.hours), 4),
-        dec_degrees=round(cast(float, dec.degrees), 4),
-        altitude_degrees=round(cast(float, alt.degrees), 2),
+        ra_hours=round(ra_hours_result, 4),
+        dec_degrees=round(dec_degrees_result, 4),
+        altitude_degrees=altitude_degrees,
         azimuth_degrees=round(cast(float, az.degrees), 2),
         distance_km=round(geodata.light_years_to_km(distance_ly), 0),
         location=location.label,
+        apparent_magnitude=apparent_magnitude,
+        sun_altitude_degrees=sun_altitude_degrees,
+        cloud_cover_pct=cloud_cover_pct,
+        visible=visible,
+        moon_separation_degrees=moon_separation_degrees,
+        moon_direction=moon_direction,
     )
 
 
@@ -235,15 +448,37 @@ def _search_moon(key: str, location: ResolvedLocation) -> SearchResult:
     apparent = observer.at(t).observe(target).apparent()
     ra, dec, distance = apparent.radec()
     alt, az, _ = apparent.altaz()
+
+    ra_hours = cast(float, ra.hours)
+    dec_degrees = cast(float, dec.degrees)
+    altitude_degrees = round(cast(float, alt.degrees), 2)
+    sun_altitude_degrees = _sun_altitude_degrees(observer, t)
+    apparent_magnitude = round(
+        magnitudes.STATIC_MAGNITUDES.get(key, NAKED_EYE_LIMITING_MAGNITUDE), 2
+    )
+    cloud_cover_pct = _current_cloud_cover_pct(location)
+    visible = _is_currently_visible(
+        altitude_degrees, sun_altitude_degrees, cloud_cover_pct, apparent_magnitude
+    )
+    moon_separation_degrees, moon_direction = _moon_relative_position(
+        observer, t, ra_hours, dec_degrees
+    )
+
     return SearchResult(
         name=key.capitalize(),
         type="Natural Satellite",
-        ra_hours=round(cast(float, ra.hours), 4),
-        dec_degrees=round(cast(float, dec.degrees), 4),
-        altitude_degrees=round(cast(float, alt.degrees), 2),
+        ra_hours=round(ra_hours, 4),
+        dec_degrees=round(dec_degrees, 4),
+        altitude_degrees=altitude_degrees,
         azimuth_degrees=round(cast(float, az.degrees), 2),
         distance_km=round(cast(float, distance.km), 0),
         location=location.label,
+        apparent_magnitude=apparent_magnitude,
+        sun_altitude_degrees=sun_altitude_degrees,
+        cloud_cover_pct=cloud_cover_pct,
+        visible=visible,
+        moon_separation_degrees=moon_separation_degrees,
+        moon_direction=moon_direction,
     )
 
 
@@ -327,6 +562,15 @@ def search_object(
     azimuth for that same location. Jupiter's and Saturn's major moons
     return an approximate current position (see :mod:`backend.moons`).
 
+    The response also reports whether the object is currently visible
+    to the naked eye -- comfortably above the horizon, in a sufficiently
+    dark and clear sky, and bright enough (see
+    :data:`MIN_VISIBLE_ALTITUDE_DEGREES`,
+    :data:`MAX_SUN_ALTITUDE_FOR_VISIBILITY_DEGREES`,
+    :data:`CLOUD_COVER_VISIBILITY_THRESHOLD_PERCENT`, and
+    :data:`NAKED_EYE_LIMITING_MAGNITUDE`) -- along with the object's
+    angular separation and compass direction relative to the Moon.
+
     Args:
         name: Case-insensitive object name (e.g. ``"Sirius"``, ``"Mars"``).
         coordinates: The observer's location — either raw ``"lat, lon"``
@@ -336,7 +580,9 @@ def search_object(
 
     Returns:
         A :class:`SearchResult` containing name, type, RA, Dec, altitude,
-        azimuth, distance, and the resolved location label.
+        azimuth, distance, apparent magnitude, current visibility, and
+        the object's position relative to the Moon, along with the
+        resolved location label.
 
     Raises:
         HTTPException: 400/404/409 if ``coordinates`` cannot be resolved,

@@ -2,9 +2,30 @@
 
 from unittest.mock import MagicMock
 
+import pytest
+
+from backend import magnitudes, openmeteo, search
+from backend.geodata import ResolvedLocation
 from backend.search import NAMED_STARS, SOLAR_SYSTEM_BODIES
 
 PARIS = {"name": "Sirius", "coordinates": "Paris, France"}
+
+
+@pytest.fixture(autouse=True)
+def _no_weather_by_default(monkeypatch):
+    """By default, skip real network calls to the Open-Meteo service.
+
+    Individual tests that care about cloud cover override
+    ``search.openmeteo.fetch_current_weather`` directly.
+    """
+    monkeypatch.setattr(
+        search.openmeteo,
+        "fetch_current_weather",
+        MagicMock(
+            side_effect=openmeteo.WeatherServiceError("network disabled in tests")
+        ),
+    )
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -425,3 +446,213 @@ class TestSearchErrors:
         """Omitting the required ``name`` query param should return HTTP 422."""
         response = client.get("/api/search", params={"coordinates": "Paris, France"})
         assert response.status_code == 422
+
+
+# ---------------------------------------------------------------------------
+# "Is it visible right now?" unit tests
+# ---------------------------------------------------------------------------
+
+
+class TestIsCurrentlyVisible:
+    """Tests for the ``visible`` decision formula in isolation."""
+
+    def test_true_when_all_conditions_satisfied(self):
+        assert search._is_currently_visible(20.0, -10.0, 20.0, 2.0) is True
+
+    def test_false_when_altitude_too_low(self):
+        assert search._is_currently_visible(5.0, -10.0, 20.0, 2.0) is False
+
+    def test_false_when_sky_not_dark_enough(self):
+        assert search._is_currently_visible(20.0, -3.0, 20.0, 2.0) is False
+
+    def test_false_when_too_cloudy(self):
+        assert search._is_currently_visible(20.0, -10.0, 80.0, 2.0) is False
+
+    def test_true_when_cloud_cover_unknown(self):
+        assert search._is_currently_visible(20.0, -10.0, None, 2.0) is True
+
+    def test_false_when_too_faint(self):
+        assert search._is_currently_visible(20.0, -10.0, 20.0, 10.0) is False
+
+    def test_boundary_altitude_is_inclusive(self):
+        assert search._is_currently_visible(10.0, -10.0, 0.0, 0.0) is True
+        assert search._is_currently_visible(9.99, -10.0, 0.0, 0.0) is False
+
+    def test_boundary_sun_altitude_is_inclusive(self):
+        assert search._is_currently_visible(20.0, -6.0, 0.0, 0.0) is True
+        assert search._is_currently_visible(20.0, -5.99, 0.0, 0.0) is False
+
+    def test_boundary_cloud_cover_is_exclusive(self):
+        assert search._is_currently_visible(20.0, -10.0, 49.99, 0.0) is True
+        assert search._is_currently_visible(20.0, -10.0, 50.0, 0.0) is False
+
+    def test_boundary_magnitude_is_inclusive(self):
+        assert search._is_currently_visible(20.0, -10.0, 0.0, 6.0) is True
+        assert search._is_currently_visible(20.0, -10.0, 0.0, 6.01) is False
+
+
+class TestCurrentCloudCoverPct:
+    """Tests for the best-effort current cloud cover lookup."""
+
+    def _location(self):
+        return ResolvedLocation(latitude=48.8566, longitude=2.3522, label="Paris")
+
+    def test_returns_cloud_cover_from_weather_service(self, monkeypatch):
+        weather = MagicMock(cloud_cover_pct=42.0)
+        monkeypatch.setattr(
+            search.openmeteo, "fetch_current_weather", MagicMock(return_value=weather)
+        )
+        assert search._current_cloud_cover_pct(self._location()) == 42.0
+
+    def test_returns_none_on_weather_service_error(self, monkeypatch):
+        monkeypatch.setattr(
+            search.openmeteo,
+            "fetch_current_weather",
+            MagicMock(side_effect=openmeteo.WeatherServiceError("down")),
+        )
+        assert search._current_cloud_cover_pct(self._location()) is None
+
+
+# ---------------------------------------------------------------------------
+# Endpoint-level tests for the new visibility/magnitude/moon-relative fields
+# ---------------------------------------------------------------------------
+
+
+class TestVisibleField:
+    """Tests for the ``visible`` field returned by the search endpoint."""
+
+    def test_visible_true_when_conditions_met(self, client, monkeypatch):
+        _patch_astronomy(monkeypatch, alt_degrees=30.0)
+        monkeypatch.setattr(
+            search, "_sun_altitude_degrees", MagicMock(return_value=-20.0)
+        )
+        response = client.get(
+            "/api/search", params={"name": "Vega", "coordinates": "Paris, France"}
+        )
+        data = response.json()
+        assert data["visible"] is True
+        assert data["sun_altitude_degrees"] == pytest.approx(-20.0)
+
+    def test_visible_false_when_sun_too_high(self, client, monkeypatch):
+        _patch_astronomy(monkeypatch, alt_degrees=30.0)
+        monkeypatch.setattr(
+            search, "_sun_altitude_degrees", MagicMock(return_value=0.0)
+        )
+        response = client.get(
+            "/api/search", params={"name": "Vega", "coordinates": "Paris, France"}
+        )
+        assert response.json()["visible"] is False
+
+    def test_visible_false_when_altitude_too_low(self, client, monkeypatch):
+        _patch_astronomy(monkeypatch, alt_degrees=5.0)
+        monkeypatch.setattr(
+            search, "_sun_altitude_degrees", MagicMock(return_value=-20.0)
+        )
+        response = client.get(
+            "/api/search", params={"name": "Vega", "coordinates": "Paris, France"}
+        )
+        assert response.json()["visible"] is False
+
+    def test_visible_false_when_too_cloudy(self, client, monkeypatch):
+        _patch_astronomy(monkeypatch, alt_degrees=30.0)
+        monkeypatch.setattr(
+            search, "_sun_altitude_degrees", MagicMock(return_value=-20.0)
+        )
+        monkeypatch.setattr(
+            search, "_current_cloud_cover_pct", MagicMock(return_value=90.0)
+        )
+        response = client.get(
+            "/api/search", params={"name": "Vega", "coordinates": "Paris, France"}
+        )
+        assert response.json()["visible"] is False
+
+
+class TestApparentMagnitudeField:
+    """Tests for the ``apparent_magnitude`` field returned by the endpoint."""
+
+    def test_named_star_uses_catalog_magnitude(self, client, monkeypatch):
+        _patch_astronomy(monkeypatch)
+        response = client.get(
+            "/api/search", params={"name": "Sirius", "coordinates": "Paris, France"}
+        )
+        expected = magnitudes.NAMED_STAR_MAGNITUDES["sirius"]
+        assert response.json()["apparent_magnitude"] == pytest.approx(expected)
+
+    def test_pluto_uses_static_fallback_magnitude(self, client, monkeypatch):
+        _patch_astronomy(monkeypatch)
+        response = client.get(
+            "/api/search", params={"name": "Pluto", "coordinates": "Paris, France"}
+        )
+        expected = magnitudes.STATIC_MAGNITUDES["pluto"]
+        assert response.json()["apparent_magnitude"] == pytest.approx(expected)
+
+    def test_sun_magnitude_is_close_to_solar_constant(self, client, monkeypatch):
+        _patch_astronomy(monkeypatch)
+        response = client.get(
+            "/api/search", params={"name": "Sun", "coordinates": "Paris, France"}
+        )
+        expected = magnitudes.SUN_MAGNITUDE_AT_1AU
+        assert response.json()["apparent_magnitude"] == pytest.approx(
+            expected, abs=0.01
+        )
+
+    def test_jovian_moon_uses_static_magnitude(self, client, monkeypatch):
+        _patch_astronomy(monkeypatch)
+        response = client.get(
+            "/api/search", params={"name": "Titan", "coordinates": "Paris, France"}
+        )
+        expected = magnitudes.STATIC_MAGNITUDES["titan"]
+        assert response.json()["apparent_magnitude"] == pytest.approx(expected)
+
+
+class TestMoonRelativePosition:
+    """Tests for the ``moon_separation_degrees``/``moon_direction`` fields."""
+
+    def test_reports_separation_and_direction_for_a_planet(self, client, monkeypatch):
+        _patch_astronomy(monkeypatch)
+        response = client.get(
+            "/api/search", params={"name": "Mars", "coordinates": "Paris, France"}
+        )
+        data = response.json()
+        assert data["moon_separation_degrees"] == pytest.approx(0.0, abs=1e-6)
+        assert data["moon_direction"] == "N"
+
+    def test_reports_separation_and_direction_for_a_named_star(
+        self, client, monkeypatch
+    ):
+        _patch_astronomy(monkeypatch)
+        response = client.get(
+            "/api/search", params={"name": "Sirius", "coordinates": "Paris, France"}
+        )
+        data = response.json()
+        assert data["moon_separation_degrees"] == pytest.approx(0.0, abs=1e-6)
+        assert data["moon_direction"] == "N"
+
+    def test_reports_separation_and_direction_for_a_jovian_moon(
+        self, client, monkeypatch
+    ):
+        _patch_astronomy(monkeypatch)
+        response = client.get(
+            "/api/search", params={"name": "Io", "coordinates": "Paris, France"}
+        )
+        data = response.json()
+        assert data["moon_separation_degrees"] == pytest.approx(0.0, abs=1e-6)
+        assert data["moon_direction"] == "N"
+
+    def test_moon_search_has_no_moon_relative_fields(self, client, monkeypatch):
+        _patch_astronomy(monkeypatch)
+        response = client.get(
+            "/api/search", params={"name": "Moon", "coordinates": "Paris, France"}
+        )
+        data = response.json()
+        assert data["moon_separation_degrees"] is None
+        assert data["moon_direction"] is None
+
+    def test_sun_search_has_no_moon_relative_fields(self, client, monkeypatch):
+        _patch_astronomy(monkeypatch)
+        response = client.get(
+            "/api/search", params={"name": "Sun", "coordinates": "Paris, France"}
+        )
+        data = response.json()
+        assert data["moon_separation_degrees"] is None
+        assert data["moon_direction"] is None
