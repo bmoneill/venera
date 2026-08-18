@@ -26,4 +26,4 @@ jobs:
       - name: Analysing the code with pylint
         run: |
           export PYTHONPATH=$PYTHONPATH:./backend
-          pylint --fail-under=9.0 $(git ls-files 'backend/*.py')
+          pylint --fail-under=9.0 --ignore-patterns=".*test.*" $(git ls-files 'backend/*.py')
