@@ -52,7 +52,7 @@ def fold_ascii(text: str) -> str:
     as "São Paulo". This only folds *combining* diacritics on Latin
     characters (e.g. é -> e); it does not transliterate other scripts
     (Cyrillic, CJK, Arabic, etc.) -- for those, matching relies on
-    GeoNames' own precomputed ASCII name (see :mod:`backend.geonames_import`).
+    GeoNames' own precomputed ASCII name.
 
     Args:
         text: Arbitrary text (a municipality name or a user's query).
@@ -402,7 +402,7 @@ class SqlMunicipalityGazetteer:
     This is what makes text-completion remain fast even when the
     ``municipalities`` table holds millions of rows -- e.g. after
     importing the full GeoNames gazetteer via
-    :mod:`backend.geonames_import` -- since :class:`MunicipalityGazetteer`
+    since :class:`MunicipalityGazetteer`
     loading every row into a Python list at startup (and re-scanning that
     list on every keystroke) would not scale to that size.
     """
@@ -678,7 +678,7 @@ def get_gazetteer() -> "MunicipalityGazetteer | SqlMunicipalityGazetteer":
     database (seeded from ``backend/data/municipalities.csv`` at startup,
     see :func:`seed_municipalities_from_csv`, or, for production-scale
     deployments, from the full GeoNames gazetteer, see
-    :mod:`backend.geonames_import`).
+    :mod:`backend.scripts.import_geonames`).
 
     The returned gazetteer is always a :class:`SqlMunicipalityGazetteer`,
     which queries the database directly (via indexed columns) rather

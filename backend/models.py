@@ -20,7 +20,7 @@ class Municipality(Base):
     that both exact-match and prefix (``LIKE 'prefix%'``) queries can use
     the index instead of scanning the whole table, which matters once
     this table holds millions of rows (e.g. after importing the full
-    GeoNames gazetteer -- see :mod:`backend.geonames_import`).
+    GeoNames gazetteer -- see :mod:`backend.scripts.import_geonames`).
 
     ``population`` is used to rank autocomplete suggestions so that,
     e.g., "Paris, France" is suggested ahead of an obscure hamlet that

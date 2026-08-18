@@ -1,8 +1,7 @@
 """Static ISO 3166-1 country-code lookup table.
 
 Used to translate the two-letter country codes found in GeoNames data
-(see :mod:`backend.geonames_import`) into human-readable country names,
-without any network lookups or third-party dependency.
+into human-readable country names, without any network lookups or third-party dependency.
 """
 
 #: Maps ISO 3166-1 alpha-2 country codes to their common English short name.
