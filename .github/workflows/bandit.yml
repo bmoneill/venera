@@ -21,4 +21,5 @@ jobs:
       - name: Perform Bandit Analysis
         uses: PyCQA/bandit-action@v1
         with:
-          arguments: --targets backend --exclude backend/tests
+          targets: backend
+          exclude: backend/tests
